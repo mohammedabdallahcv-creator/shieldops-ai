@@ -1,0 +1,180 @@
+{
+  "name": "shieldops-ai",
+  "displayName": "ShieldOps AI",
+  "description": "Security scanner for Docker, Kubernetes, Compose, SBOM, and AutoFix workflows.",
+  "version": "0.0.1",
+  "publisher": "mohammedabdallahcv-creator",
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.116.0"
+  },
+  "categories": [
+    "Other",
+    "Linters"
+  ],
+  "keywords": [
+    "shieldops",
+    "docker",
+    "kubernetes",
+    "compose",
+    "sbom",
+    "autofix",
+    "devsecops"
+  ],
+  "activationEvents": [
+    "onCommand:shieldops-ai.openHub",
+    "onCommand:shieldops-ai.analyzeCurrentFile",
+    "onCommand:shieldops-ai.autofixCurrentDockerfile",
+    "onCommand:shieldops-ai.generateSbomFromCurrentFile",
+    "onCommand:shieldops-ai.scanComposeCurrentFile",
+    "onCommand:shieldops-ai.scanK8sCurrentFile",
+    "onCommand:shieldops-ai.estimateCloudCostFromCurrentFile",
+    "onCommand:shieldops-ai.generateComposeFromCurrentFile"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "shieldops-ai.openHub",
+        "title": "Open Integration Hub",
+        "category": "ShieldOps AI"
+      },
+      {
+        "command": "shieldops-ai.analyzeCurrentFile",
+        "title": "Analyze Current File",
+        "category": "ShieldOps AI"
+      },
+      {
+        "command": "shieldops-ai.autofixCurrentDockerfile",
+        "title": "AutoFix Current Dockerfile",
+        "category": "ShieldOps AI"
+      },
+      {
+        "command": "shieldops-ai.generateSbomFromCurrentFile",
+        "title": "Generate SBOM From Current File",
+        "category": "ShieldOps AI"
+      },
+      {
+        "command": "shieldops-ai.scanComposeCurrentFile",
+        "title": "Scan Current Compose File",
+        "category": "ShieldOps AI"
+      },
+      {
+        "command": "shieldops-ai.scanK8sCurrentFile",
+        "title": "Scan Current Kubernetes File",
+        "category": "ShieldOps AI"
+      },
+      {
+        "command": "shieldops-ai.estimateCloudCostFromCurrentFile",
+        "title": "Estimate Cloud Cost From Current File",
+        "category": "ShieldOps AI"
+      },
+      {
+        "command": "shieldops-ai.generateComposeFromCurrentFile",
+        "title": "Generate Compose From Current File",
+        "category": "ShieldOps AI"
+      }
+    ],
+    "configuration": {
+      "title": "ShieldOps AI",
+      "properties": {
+        "shieldopsAI.baseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:5000",
+          "description": "Base URL for the ShieldOps web application."
+        },
+        "shieldopsAI.apiToken": {
+          "type": "string",
+          "default": "",
+          "description": "Optional API token for ShieldOps extension requests against hosted environments."
+        }
+      }
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "shieldops-ai.analyzeCurrentFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@10"
+        },
+        {
+          "command": "shieldops-ai.openHub",
+          "when": "resourceScheme == file",
+          "group": "navigation@11"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "shieldops-ai.analyzeCurrentFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@10"
+        },
+        {
+          "command": "shieldops-ai.autofixCurrentDockerfile",
+          "when": "resourceScheme == file",
+          "group": "navigation@11"
+        },
+        {
+          "command": "shieldops-ai.generateSbomFromCurrentFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@12"
+        },
+        {
+          "command": "shieldops-ai.scanComposeCurrentFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@13"
+        },
+        {
+          "command": "shieldops-ai.scanK8sCurrentFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@14"
+        },
+        {
+          "command": "shieldops-ai.estimateCloudCostFromCurrentFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@15"
+        },
+        {
+          "command": "shieldops-ai.generateComposeFromCurrentFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@16"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "shieldops-ai.analyzeCurrentFile",
+          "when": "explorerResourceIsFolder == false",
+          "group": "navigation@10"
+        },
+        {
+          "command": "shieldops-ai.openHub",
+          "group": "navigation@20"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.116.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.39.3",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.56.1",
+    "webpack": "^5.105.3",
+    "webpack-cli": "^6.0.1"
+  }
+}
