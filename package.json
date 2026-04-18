@@ -2,9 +2,18 @@
   "name": "shieldops-ai",
   "displayName": "ShieldOps AI",
   "description": "Security scanner for Docker, Kubernetes, Compose, SBOM, and AutoFix workflows.",
-  "version": "0.0.1",
-  "publisher": "mohammedabdallahcv-creator",
+  "version": "0.0.2",
+  "publisher": "mohammedabdallahcv",
   "icon": "images/icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mohammedabdallahcv-creator/shieldops-ai.git"
+  },
+  "homepage": "https://github.com/mohammedabdallahcv-creator/shieldops-ai#readme",
+  "bugs": {
+    "url": "https://github.com/mohammedabdallahcv-creator/shieldops-ai/issues"
+  },
   "engines": {
     "vscode": "^1.116.0"
   },
