@@ -1,0 +1,66 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg2" x1="95" y1="60" x2="1168" y2="664" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#08111F"/>
+      <stop offset="1" stop-color="#050816"/>
+    </linearGradient>
+    <linearGradient id="accent2" x1="216" y1="170" x2="1048" y2="592" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="720" rx="28" fill="url(#bg2)"/>
+  <rect x="72" y="72" width="1136" height="576" rx="30" stroke="url(#accent2)" stroke-opacity="0.36"/>
+
+  <text x="92" y="122" fill="white" font-size="42" font-family="Arial, Helvetica, sans-serif" font-weight="700">From file to findings in one pass</text>
+  <text x="92" y="158" fill="#94A3B8" font-size="22" font-family="Arial, Helvetica, sans-serif">
+    The extension keeps the first version focused: command execution, API call, results panel, and safe web fallback.
+  </text>
+
+  <rect x="92" y="214" width="254" height="256" rx="24" fill="#0D1426" stroke="#243352"/>
+  <text x="118" y="258" fill="#A78BFA" font-size="20" font-family="Arial, Helvetica, sans-serif" font-weight="700">Step 1</text>
+  <text x="118" y="302" fill="white" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Choose a file</text>
+  <text x="118" y="348" fill="#94A3B8" font-size="20" font-family="Arial, Helvetica, sans-serif">Dockerfile.basic</text>
+  <rect x="118" y="376" width="198" height="54" rx="14" fill="#111827" stroke="#334155"/>
+  <text x="146" y="410" fill="#E5E7EB" font-size="20" font-family="Arial, Helvetica, sans-serif">Analyze Current File</text>
+
+  <rect x="386" y="214" width="254" height="256" rx="24" fill="#0D1426" stroke="#243352"/>
+  <text x="412" y="258" fill="#67E8F9" font-size="20" font-family="Arial, Helvetica, sans-serif" font-weight="700">Step 2</text>
+  <text x="412" y="302" fill="white" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Call the API</text>
+  <rect x="412" y="336" width="202" height="84" rx="16" fill="#0B1120" stroke="#1D4ED8"/>
+  <text x="438" y="370" fill="#E5E7EB" font-size="20" font-family="Arial, Helvetica, sans-serif">POST /api/ext/run</text>
+  <text x="438" y="398" fill="#94A3B8" font-size="18" font-family="Arial, Helvetica, sans-serif">task + filename + content</text>
+
+  <rect x="680" y="214" width="254" height="256" rx="24" fill="#0D1426" stroke="#243352"/>
+  <text x="706" y="258" fill="#34D399" font-size="20" font-family="Arial, Helvetica, sans-serif" font-weight="700">Step 3</text>
+  <text x="706" y="302" fill="white" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Review results</text>
+  <rect x="706" y="336" width="202" height="54" rx="14" fill="#111827" stroke="#334155"/>
+  <text x="734" y="370" fill="#E5E7EB" font-size="20" font-family="Arial, Helvetica, sans-serif">Findings panel</text>
+  <rect x="706" y="406" width="82" height="34" rx="17" fill="#7C3AED" fill-opacity="0.16" stroke="#8B5CF6"/>
+  <text x="728" y="428" fill="#C4B5FD" font-size="16" font-family="Arial, Helvetica, sans-serif">score</text>
+  <rect x="796" y="406" width="88" height="34" rx="17" fill="#06B6D4" fill-opacity="0.14" stroke="#22D3EE"/>
+  <text x="821" y="428" fill="#67E8F9" font-size="16" font-family="Arial, Helvetica, sans-serif">engine</text>
+
+  <rect x="974" y="214" width="234" height="256" rx="24" fill="#0D1426" stroke="#243352"/>
+  <text x="1000" y="258" fill="#FBBF24" font-size="20" font-family="Arial, Helvetica, sans-serif" font-weight="700">Fallback</text>
+  <text x="1000" y="302" fill="white" font-size="30" font-family="Arial, Helvetica, sans-serif" font-weight="700">Open web flow</text>
+  <text x="1000" y="346" fill="#94A3B8" font-size="18" font-family="Arial, Helvetica, sans-serif">
+    Used only when the current product
+  </text>
+  <text x="1000" y="372" fill="#94A3B8" font-size="18" font-family="Arial, Helvetica, sans-serif">
+    journey is still page-first.
+  </text>
+  <rect x="1000" y="402" width="170" height="40" rx="20" fill="#F59E0B" fill-opacity="0.16" stroke="#FBBF24"/>
+  <text x="1028" y="427" fill="#FCD34D" font-size="18" font-family="Arial, Helvetica, sans-serif">safe fallback</text>
+
+  <path d="M346 342H386" stroke="#8B5CF6" stroke-width="4" stroke-linecap="round"/>
+  <path d="M640 342H680" stroke="#06B6D4" stroke-width="4" stroke-linecap="round"/>
+  <path d="M934 342H974" stroke="#10B981" stroke-width="4" stroke-linecap="round"/>
+
+  <rect x="92" y="516" width="1116" height="102" rx="24" fill="#0A1020" stroke="#243352"/>
+  <text x="126" y="562" fill="white" font-size="28" font-family="Arial, Helvetica, sans-serif" font-weight="700">Built for the first production loop</text>
+  <text x="126" y="598" fill="#94A3B8" font-size="22" font-family="Arial, Helvetica, sans-serif">
+    Fast enough for Marketplace, safe enough for V1, and already aligned with the live ShieldOps backend.
+  </text>
+</svg>

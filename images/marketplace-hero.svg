@@ -1,0 +1,85 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="80" y1="60" x2="1170" y2="670" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F172A"/>
+      <stop offset="0.55" stop-color="#111827"/>
+      <stop offset="1" stop-color="#030712"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="182" y1="154" x2="1040" y2="550" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B5CF6"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="760" y1="154" x2="1110" y2="550" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#171A2B"/>
+      <stop offset="1" stop-color="#0C1020"/>
+    </linearGradient>
+    <filter id="glow" x="120" y="92" width="1030" height="500" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="24" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="720" rx="28" fill="url(#bg)"/>
+  <circle cx="1046" cy="123" r="152" fill="#7C3AED" fill-opacity="0.12"/>
+  <circle cx="214" cy="610" r="170" fill="#06B6D4" fill-opacity="0.08"/>
+
+  <g opacity="0.18">
+    <path d="M0 102H1280" stroke="#38BDF8"/>
+    <path d="M0 214H1280" stroke="#38BDF8"/>
+    <path d="M0 326H1280" stroke="#38BDF8"/>
+    <path d="M0 438H1280" stroke="#38BDF8"/>
+    <path d="M0 550H1280" stroke="#38BDF8"/>
+    <path d="M110 0V720" stroke="#38BDF8"/>
+    <path d="M334 0V720" stroke="#38BDF8"/>
+    <path d="M558 0V720" stroke="#38BDF8"/>
+    <path d="M782 0V720" stroke="#38BDF8"/>
+    <path d="M1006 0V720" stroke="#38BDF8"/>
+  </g>
+
+  <rect x="86" y="86" width="1108" height="548" rx="32" stroke="url(#accent)" stroke-opacity="0.42" fill="none"/>
+  <rect x="118" y="118" width="480" height="484" rx="28" fill="#0B1120" stroke="#2A3755"/>
+  <rect x="640" y="118" width="522" height="484" rx="28" fill="url(#panel)" stroke="#2A3755"/>
+
+  <g filter="url(#glow)">
+    <rect x="152" y="152" width="128" height="128" rx="28" fill="#17122E" stroke="#8B5CF6"/>
+    <path d="M216 182L248 198V234C248 259 232 279 216 286C200 279 184 259 184 234V198L216 182Z" fill="#7C3AED"/>
+    <path d="M228 215L211 240L202 231" stroke="white" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <text x="152" y="354" fill="white" font-size="54" font-family="Arial, Helvetica, sans-serif" font-weight="700">ShieldOps AI for VS Code</text>
+  <text x="152" y="404" fill="#9CA3AF" font-size="23" font-family="Arial, Helvetica, sans-serif">
+    Run Dockerfile, SBOM, Compose, Kubernetes, AutoFix, and Cloud Cost flows
+  </text>
+  <text x="152" y="438" fill="#9CA3AF" font-size="23" font-family="Arial, Helvetica, sans-serif">
+    from VS Code with API-first execution and clean fallback to the ShieldOps web app.
+  </text>
+
+  <rect x="152" y="486" width="202" height="46" rx="23" fill="#7C3AED" fill-opacity="0.18" stroke="#8B5CF6"/>
+  <text x="182" y="515" fill="#C4B5FD" font-size="22" font-family="Arial, Helvetica, sans-serif" font-weight="700">API-first workflow</text>
+
+  <rect x="372" y="486" width="176" height="46" rx="23" fill="#06B6D4" fill-opacity="0.14" stroke="#22D3EE"/>
+  <text x="402" y="515" fill="#67E8F9" font-size="22" font-family="Arial, Helvetica, sans-serif" font-weight="700">Results panel</text>
+
+  <text x="680" y="180" fill="white" font-size="26" font-family="Arial, Helvetica, sans-serif" font-weight="700">Typical extension flow</text>
+
+  <rect x="680" y="218" width="442" height="78" rx="18" fill="#0B1120" stroke="#243352"/>
+  <circle cx="720" cy="257" r="16" fill="#8B5CF6"/>
+  <text x="750" y="249" fill="white" font-size="22" font-family="Arial, Helvetica, sans-serif" font-weight="700">1. Open a file in VS Code</text>
+  <text x="750" y="274" fill="#94A3B8" font-size="18" font-family="Arial, Helvetica, sans-serif">Dockerfile, Compose, Kubernetes, or dependency manifest</text>
+
+  <rect x="680" y="320" width="442" height="78" rx="18" fill="#0B1120" stroke="#243352"/>
+  <circle cx="720" cy="359" r="16" fill="#06B6D4"/>
+  <text x="750" y="351" fill="white" font-size="22" font-family="Arial, Helvetica, sans-serif" font-weight="700">2. Run a ShieldOps AI command</text>
+  <text x="750" y="376" fill="#94A3B8" font-size="18" font-family="Arial, Helvetica, sans-serif">Context menu, command palette, or editor toolbar</text>
+
+  <rect x="680" y="422" width="442" height="78" rx="18" fill="#0B1120" stroke="#243352"/>
+  <circle cx="720" cy="461" r="16" fill="#10B981"/>
+  <text x="750" y="453" fill="white" font-size="22" font-family="Arial, Helvetica, sans-serif" font-weight="700">3. Review structured results</text>
+  <text x="750" y="478" fill="#94A3B8" font-size="18" font-family="Arial, Helvetica, sans-serif">Findings, score, engine, scan id, and route hints</text>
+
+  <rect x="680" y="524" width="442" height="46" rx="16" fill="#111827" stroke="#243352"/>
+  <text x="710" y="553" fill="#CBD5E1" font-size="20" font-family="Arial, Helvetica, sans-serif">Web fallback remains available for page-first product flows</text>
+</svg>

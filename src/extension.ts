@@ -118,7 +118,12 @@ function registerTaskCommand(
       );
 
       if (choice === "Open in Web App") {
-        await openExternal(baseUrl, payload.route || TASK_ROUTE_MAP[task]);
+        const scanId = (payload.result as any)?.scan_id;
+        let targetRoute = payload.route || TASK_ROUTE_MAP[task];
+        if (scanId) {
+          targetRoute = `/dockerfile?scan_id=${scanId}`;
+        }
+        await openExternal(baseUrl, targetRoute);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || "Unknown error");
@@ -216,7 +221,7 @@ function validateDocumentForTask(document: vscode.TextDocument, task: ShieldOpsT
 
 function buildBaseUrl(): string {
   const config = vscode.workspace.getConfiguration("shieldopsAI");
-  const configured = String(config.get("baseUrl") || "http://127.0.0.1:5000").trim();
+  const configured = String(config.get("baseUrl") || "https://shieldops-ai.onrender.com").trim();
   return configured.replace(/\/+$/, "");
 }
 

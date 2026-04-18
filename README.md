@@ -1,6 +1,8 @@
 # ShieldOps AI for VS Code
 
-ShieldOps AI is a minimal V1 VS Code extension that runs supported checks through the ShieldOps backend directly, with web fallback where the current product flow is still page-first:
+![ShieldOps AI hero](images/marketplace-hero.svg)
+
+ShieldOps AI brings core container and infrastructure workflows into VS Code while staying aligned with the live ShieldOps backend. The current release is API-first for supported tasks, with safe web fallback where the product flow is still page-first.
 
 - Dockerfile Analysis
 - AutoFix
@@ -9,6 +11,15 @@ ShieldOps AI is a minimal V1 VS Code extension that runs supported checks throug
 - Kubernetes Scan
 - Cloud Cost
 - Compose Generator
+
+## Why Install ShieldOps AI?
+
+- Run security-oriented workflows from the file you already have open.
+- Send supported tasks directly to the ShieldOps backend without copying payloads manually.
+- Review structured findings inside a dedicated VS Code results panel.
+- Fall back to the web app only when the current product journey is still page-first.
+
+![ShieldOps AI workflow](images/marketplace-workflow.svg)
 
 ## How V1 Works
 
@@ -19,6 +30,13 @@ This V1 extension is intentionally simple:
 3. The extension calls the ShieldOps extension API directly.
 4. Results open inside a VS Code panel.
 5. If a task is still web-first, the extension falls back to opening the matching ShieldOps page.
+
+## What The Results Panel Shows
+
+- Findings table grouped by severity
+- Line hints when available
+- Summary metrics such as issue count, score, engine, and scan id
+- A clean empty state when no issues are found
 
 ## Commands
 
@@ -56,6 +74,18 @@ Change `baseUrl` if your ShieldOps app runs on another host or port. `apiToken` 
 - Kubernetes Scan: `.yml`, `.yaml`
 - Cloud Cost: `Dockerfile`, `*.dockerfile`
 - Compose Generator: `Dockerfile`, `*.dockerfile`
+
+## Marketplace Notes
+
+- Current release: `v0.0.2`
+- Publisher: `mohammedabdallahcv`
+- Marketplace page: `mohammedabdallahcv.shieldops-ai`
+
+## Roadmap
+
+- Richer result panels per workflow instead of a shared V1 layout
+- Direct hosted-auth onboarding from inside the extension
+- More polished task-specific summaries for Compose, SBOM, and AutoFix
 
 ## Development
 

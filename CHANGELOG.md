@@ -6,6 +6,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-04-18
+
+- Added Marketplace-ready SVG preview assets to the repository.
+- Upgraded the README with a stronger product overview, workflow visuals, and results panel explanation.
+- Improved the Marketplace presentation for the published extension page.
+
 ## [0.0.2] - 2026-04-18
 
 - Added Marketplace metadata: repository, homepage, bugs, icon, and license.
