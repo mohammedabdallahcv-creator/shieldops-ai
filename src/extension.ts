@@ -53,6 +53,10 @@ const TASK_ALLOWED_EXTENSIONS: Record<ShieldOpsTask, string[]> = {
 
 export function activate(context: vscode.ExtensionContext) {
   const registrations = [
+    vscode.window.registerWebviewViewProvider(
+      "shieldops-ai.sidebarView",
+      new ShieldOpsSidebarViewProvider(context),
+    ),
     registerTaskCommand("shieldops-ai.openHub", context, undefined),
     registerTaskCommand("shieldops-ai.analyzeCurrentFile", context, "analyze"),
     registerTaskCommand("shieldops-ai.autofixCurrentDockerfile", context, "autofix"),
@@ -64,6 +68,34 @@ export function activate(context: vscode.ExtensionContext) {
   ];
 
   context.subscriptions.push(...registrations);
+}
+
+class ShieldOpsSidebarViewProvider implements vscode.WebviewViewProvider {
+  constructor(private readonly context: vscode.ExtensionContext) {}
+
+  resolveWebviewView(webviewView: vscode.WebviewView): void | Thenable<void> {
+    webviewView.webview.options = {
+      enableScripts: true,
+    };
+
+    webviewView.webview.html = getSidebarHtml();
+
+    webviewView.webview.onDidReceiveMessage(async (message) => {
+      const command = String(message?.command || "").trim();
+      if (!command) {
+        return;
+      }
+
+      if (command === "shieldops-ai.openHub") {
+        await vscode.commands.executeCommand(command);
+        return;
+      }
+
+      const activeEditor = vscode.window.activeTextEditor;
+      const resource = activeEditor?.document?.uri;
+      await vscode.commands.executeCommand(command, resource);
+    });
+  }
 }
 
 function registerTaskCommand(
@@ -222,7 +254,14 @@ function validateDocumentForTask(document: vscode.TextDocument, task: ShieldOpsT
 function buildBaseUrl(): string {
   const config = vscode.workspace.getConfiguration("shieldopsAI");
   const configured = String(config.get("baseUrl") || "https://shieldops-ai.onrender.com").trim();
-  return configured.replace(/\/+$/, "");
+  const normalized = configured.replace(/\/+$/, "");
+  if (!normalized) {
+    return "https://shieldops-ai.onrender.com";
+  }
+  if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(normalized)) {
+    return "https://shieldops-ai.onrender.com";
+  }
+  return normalized;
 }
 
 function buildApiToken(): string {
@@ -254,25 +293,13 @@ async function showResultPanel(
   const result = payload.result;
   const findings = extractFindings(result);
   const stats = extractStats(result, findings.length);
-  const rows = findings.map((item) => {
-    const severity = escapeHtml(item.severity || "INFO");
-    const color = severityColor(item.severity);
-    const line = item.line ? `L${item.line}` : "—";
-    const message = escapeHtml(item.message || item.description || "No description");
-    return `
-      <tr>
-        <td class="severity-cell" style="color:${color}">${severity}</td>
-        <td>${escapeHtml(line)}</td>
-        <td>${message}</td>
-      </tr>
-    `;
-  }).join("");
   const statCards = stats.map((item) => `
     <div class="meta-card">
       <strong>${escapeHtml(item.label)}</strong>
       <span>${escapeHtml(item.value)}</span>
     </div>
   `).join("");
+  const taskBody = renderTaskBody(task, result, findings);
 
   panel.webview.html = `<!DOCTYPE html>
   <html lang="en">
@@ -381,6 +408,77 @@ async function showResultPanel(
           border: 1px dashed #1e1e2e;
           border-radius: 14px;
         }
+        .section {
+          margin-top: 18px;
+          padding: 16px;
+          border-radius: 14px;
+          border: 1px solid #1e1e2e;
+          background: #12121a;
+        }
+        .section-title {
+          margin: 0 0 10px;
+          font-size: 12px;
+          font-weight: 700;
+          color: #c4b5fd;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .section-copy {
+          margin: 0;
+          color: #a5b0c2;
+        }
+        .pill-row {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 12px;
+        }
+        .pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid #2a2a3e;
+          background: #171822;
+          color: #d8def0;
+          font-size: 12px;
+        }
+        .stack {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 12px;
+          margin-top: 12px;
+        }
+        .stack-card {
+          border-radius: 14px;
+          border: 1px solid #222436;
+          background: #171822;
+          padding: 14px;
+        }
+        .stack-card strong {
+          display: block;
+          margin-bottom: 8px;
+          color: #f5f3ff;
+        }
+        .stack-card span {
+          color: #a5b0c2;
+        }
+        .code-block {
+          margin-top: 12px;
+          padding: 14px;
+          border-radius: 14px;
+          background: #090a0f;
+          border: 1px solid #1e1e2e;
+          color: #d8def0;
+          white-space: pre-wrap;
+          word-break: break-word;
+          font-size: 12px;
+          overflow-x: auto;
+        }
+        .muted {
+          color: #7b8299;
+        }
       </style>
     </head>
     <body>
@@ -396,17 +494,7 @@ async function showResultPanel(
             <div class="meta-card"><strong>Web Route</strong><span>${route}</span></div>
           `}
         </div>
-        ${findings.length === 0
-          ? `<div class="empty">No issues found.</div>`
-          : `
-            <div class="badge">${findings.length} issue${findings.length > 1 ? "s" : ""} found</div>
-            <table>
-              <thead>
-                <tr><th>Severity</th><th>Line</th><th>Description</th></tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          `}
+        ${taskBody}
       </div>
     </body>
   </html>`;
@@ -485,6 +573,241 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
   return stats.slice(0, 4);
 }
 
+function renderTaskBody(
+  task: ShieldOpsTask,
+  result: unknown,
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  switch (task) {
+    case "analyze":
+      return renderAnalyzeSection(findings);
+    case "autofix":
+      return renderAutofixSection(result, findings);
+    case "sbom":
+      return renderSbomSection(result, findings);
+    case "compose":
+      return renderComposeSection(result, findings);
+    case "k8s":
+      return renderK8sSection(result, findings);
+    case "cost":
+      return renderCostSection(result, findings);
+    case "compose_generator":
+      return renderComposeGeneratorSection(result, findings);
+    default:
+      return renderFindingsSection(findings);
+  }
+}
+
+function renderAnalyzeSection(
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  return `
+    <div class="section">
+      <h2 class="section-title">Dockerfile Findings</h2>
+      <p class="section-copy">Review the flagged Dockerfile issues before opening the web workflow for deeper remediation.</p>
+    </div>
+    ${renderFindingsSection(findings)}
+  `;
+}
+
+function renderAutofixSection(
+  result: unknown,
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  const data = asRecord(result);
+  const fixedContent =
+    stringValue(data.fixed_content) ||
+    stringValue(data.fixed_dockerfile) ||
+    stringValue(data.updated_content);
+  const changes = [
+    stringValue(data.summary),
+    stringValue(data.fix_summary),
+    stringValue(data.applied_fix),
+  ].filter(Boolean);
+
+  return `
+    <div class="section">
+      <h2 class="section-title">AutoFix Result</h2>
+      <p class="section-copy">ShieldOps generated a fix suggestion for the current Dockerfile.</p>
+      ${changes.length
+        ? `<div class="pill-row">${changes.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div>`
+        : `<p class="muted">No explicit fix summary was returned by the API.</p>`}
+      ${fixedContent
+        ? `<pre class="code-block">${escapeHtml(truncateBlock(fixedContent))}</pre>`
+        : `<div class="empty">No fixed Dockerfile preview was returned.</div>`}
+    </div>
+    ${renderFindingsSection(findings)}
+  `;
+}
+
+function renderSbomSection(
+  result: unknown,
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  const data = asRecord(result);
+  const packages = Array.isArray(data.components) ? data.components.length : Array.isArray(data.packages) ? data.packages.length : 0;
+  const vulnerabilityData = asRecord(data.vulnerability_scan);
+  const vulnerabilities = Array.isArray(vulnerabilityData.vulnerabilities)
+    ? vulnerabilityData.vulnerabilities.length
+    : findings.length;
+
+  return `
+    <div class="section">
+      <h2 class="section-title">SBOM Snapshot</h2>
+      <div class="stack">
+        <div class="stack-card"><strong>Components</strong><span>${escapeHtml(String(packages))}</span></div>
+        <div class="stack-card"><strong>Vulnerabilities</strong><span>${escapeHtml(String(vulnerabilities))}</span></div>
+      </div>
+    </div>
+    ${renderFindingsSection(findings)}
+  `;
+}
+
+function renderComposeSection(
+  result: unknown,
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  const data = asRecord(result);
+  const services = Array.isArray(data.services) ? data.services : [];
+  const servicePills = services
+    .map((item) => stringValue(asRecord(item).name) || stringValue(item))
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return `
+    <div class="section">
+      <h2 class="section-title">Compose Scan</h2>
+      <p class="section-copy">Service-level hints are shown here when the backend returns them.</p>
+      ${servicePills.length
+        ? `<div class="pill-row">${servicePills.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div>`
+        : `<p class="muted">No per-service metadata was returned for this scan.</p>`}
+    </div>
+    ${renderFindingsSection(findings)}
+  `;
+}
+
+function renderK8sSection(
+  result: unknown,
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  const data = asRecord(result);
+  const categories = [
+    stringValue(data.cluster_context),
+    stringValue(data.policy_pack),
+    stringValue(data.framework),
+    stringValue(data.namespace),
+  ].filter(Boolean);
+
+  return `
+    <div class="section">
+      <h2 class="section-title">Kubernetes Scan</h2>
+      ${categories.length
+        ? `<div class="pill-row">${categories.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div>`
+        : `<p class="muted">Policy and manifest metadata will appear here when available.</p>`}
+    </div>
+    ${renderFindingsSection(findings)}
+  `;
+}
+
+function renderCostSection(
+  result: unknown,
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  const data = asRecord(result);
+  const monthlyCost =
+    stringValue(data.monthly_cost) ||
+    stringValue(data.estimated_monthly_cost) ||
+    stringValue(data.total_monthly_cost);
+  const notes = [
+    stringValue(data.cost_summary),
+    stringValue(data.recommendation),
+    stringValue(data.summary),
+  ].filter(Boolean);
+
+  return `
+    <div class="section">
+      <h2 class="section-title">Cloud Cost Estimate</h2>
+      <div class="stack">
+        <div class="stack-card"><strong>Estimated Monthly Cost</strong><span>${escapeHtml(monthlyCost || "Not provided")}</span></div>
+        <div class="stack-card"><strong>Optimization Notes</strong><span>${escapeHtml(String(notes.length))}</span></div>
+      </div>
+      ${notes.length
+        ? `<div class="pill-row">${notes.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div>`
+        : ""}
+    </div>
+    ${renderFindingsSection(findings)}
+  `;
+}
+
+function renderComposeGeneratorSection(
+  result: unknown,
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  const data = asRecord(result);
+  const generatedCompose =
+    stringValue(data.compose_yaml) ||
+    stringValue(data.generated_compose) ||
+    stringValue(data.content);
+  const notes = [
+    stringValue(data.summary),
+    stringValue(data.generator),
+    stringValue(data.template),
+  ].filter(Boolean);
+
+  return `
+    <div class="section">
+      <h2 class="section-title">Compose Generator Output</h2>
+      ${notes.length ? `<div class="pill-row">${notes.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+      ${generatedCompose
+        ? `<pre class="code-block">${escapeHtml(truncateBlock(generatedCompose))}</pre>`
+        : `<div class="empty">No generated compose preview was returned.</div>`}
+    </div>
+    ${renderFindingsSection(findings)}
+  `;
+}
+
+function renderFindingsSection(
+  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+): string {
+  if (findings.length === 0) {
+    return `<div class="empty">No issues found.</div>`;
+  }
+
+  const rows = findings.map((item) => {
+    const severity = escapeHtml(item.severity || "INFO");
+    const color = severityColor(item.severity);
+    const line = item.line ? `L${item.line}` : "—";
+    const message = escapeHtml(item.message || item.description || "No description");
+    return `
+      <tr>
+        <td class="severity-cell" style="color:${color}">${severity}</td>
+        <td>${escapeHtml(line)}</td>
+        <td>${message}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <div class="section">
+      <div class="badge">${findings.length} issue${findings.length > 1 ? "s" : ""} found</div>
+      <table>
+        <thead>
+          <tr><th>Severity</th><th>Line</th><th>Description</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function truncateBlock(value: string, maxLength = 2400): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}\n...` : value;
+}
+
 function stringValue(value: unknown): string {
   if (typeof value === "string") {
     return value;
@@ -541,6 +864,88 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function getSidebarHtml(): string {
+  const actions = [
+    { label: "Analyze Current File", command: "shieldops-ai.analyzeCurrentFile" },
+    { label: "AutoFix Dockerfile", command: "shieldops-ai.autofixCurrentDockerfile" },
+    { label: "Generate SBOM", command: "shieldops-ai.generateSbomFromCurrentFile" },
+    { label: "Scan Compose", command: "shieldops-ai.scanComposeCurrentFile" },
+    { label: "Scan Kubernetes", command: "shieldops-ai.scanK8sCurrentFile" },
+    { label: "Estimate Cloud Cost", command: "shieldops-ai.estimateCloudCostFromCurrentFile" },
+    { label: "Generate Compose", command: "shieldops-ai.generateComposeFromCurrentFile" },
+    { label: "Open Integration Hub", command: "shieldops-ai.openHub" },
+  ];
+
+  const buttons = actions.map((action) => `
+    <button class="action" data-command="${escapeHtml(action.command)}">${escapeHtml(action.label)}</button>
+  `).join("");
+
+  return `<!DOCTYPE html>
+  <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <style>
+        body {
+          margin: 0;
+          padding: 14px;
+          font-family: var(--vscode-font-family);
+          color: var(--vscode-foreground);
+          background: var(--vscode-sideBar-background);
+        }
+        .card {
+          border: 1px solid var(--vscode-sideBar-border, var(--vscode-editorWidget-border));
+          border-radius: 12px;
+          padding: 12px;
+          background: var(--vscode-editorWidget-background);
+        }
+        h2 {
+          margin: 0 0 8px;
+          font-size: 15px;
+        }
+        p {
+          margin: 0 0 12px;
+          color: var(--vscode-descriptionForeground);
+          line-height: 1.45;
+          font-size: 12px;
+        }
+        .actions {
+          display: grid;
+          gap: 8px;
+        }
+        .action {
+          width: 100%;
+          border: 1px solid var(--vscode-button-border, transparent);
+          border-radius: 8px;
+          padding: 8px 10px;
+          text-align: left;
+          cursor: pointer;
+          color: var(--vscode-button-foreground);
+          background: var(--vscode-button-background);
+        }
+        .action:hover {
+          background: var(--vscode-button-hoverBackground);
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h2>ShieldOps AI</h2>
+        <p>Run the current file through ShieldOps directly from the sidebar.</p>
+        <div class="actions">${buttons}</div>
+      </div>
+      <script>
+        const vscode = acquireVsCodeApi();
+        for (const button of document.querySelectorAll(".action")) {
+          button.addEventListener("click", () => {
+            vscode.postMessage({ command: button.dataset.command });
+          });
+        }
+      </script>
+    </body>
+  </html>`;
 }
 
 export function deactivate() {}

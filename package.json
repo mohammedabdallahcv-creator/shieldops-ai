@@ -2,7 +2,7 @@
   "name": "shieldops-ai",
   "displayName": "ShieldOps AI",
   "description": "Security scanner for Docker, Kubernetes, Compose, SBOM, and AutoFix workflows.",
-  "version": "0.0.3",
+  "version": "0.0.6",
   "publisher": "mohammedabdallahcv",
   "icon": "images/icon.png",
   "license": "MIT",
@@ -31,6 +31,7 @@
     "devsecops"
   ],
   "activationEvents": [
+    "onView:shieldops-ai.sidebarView",
     "onCommand:shieldops-ai.openHub",
     "onCommand:shieldops-ai.analyzeCurrentFile",
     "onCommand:shieldops-ai.autofixCurrentDockerfile",
@@ -42,6 +43,24 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "shieldops-ai",
+          "title": "ShieldOps AI",
+          "icon": "images/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "shieldops-ai": [
+        {
+          "type": "webview",
+          "id": "shieldops-ai.sidebarView",
+          "name": "ShieldOps AI"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "shieldops-ai.openHub",
