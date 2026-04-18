@@ -511,6 +511,11 @@ function extractFindings(result: unknown): FindingRow[] {
   }
 
   const data = result as Record<string, unknown>;
+  const analysisV2 = asRecord(data.analysis_v2);
+  const normalizedFindings = asFindingArray(analysisV2.normalized_findings);
+  if (normalizedFindings.length) {
+    return dedupeFindings(normalizedFindings);
+  }
   const v2Scan = data.v2_scan;
   if (v2Scan && typeof v2Scan === "object") {
     const nested = v2Scan as Record<string, unknown>;
@@ -594,10 +599,24 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
   if (result && typeof result === "object") {
     const data = result as Record<string, unknown>;
     const v2Stats = getV2ScanStats(data);
-    const totalFindings = stringValue(v2Stats.issues_found) || String(findingsCount);
-    const score = stringValue(v2Stats.score) || stringValue(data.score) || stringValue((data.stats as Record<string, unknown> | undefined)?.score);
+    const summary = asRecord(data.summary);
+    const analysisV2 = asRecord(data.analysis_v2);
+    const decisionSummary = asRecord(analysisV2.decision_summary);
+    const totalFindings =
+      stringValue(v2Stats.issues_found) ||
+      stringValue(data.issues_count) ||
+      stringValue(summary.total_issues) ||
+      String(findingsCount);
+    const score =
+      stringValue(data.security_score) ||
+      stringValue(v2Stats.score) ||
+      stringValue(data.score) ||
+      stringValue((data.stats as Record<string, unknown> | undefined)?.score);
     const grade = stringValue(v2Stats.grade);
-    const readiness = stringValue(v2Stats.readiness);
+    const readiness =
+      stringValue(data.readiness_score) ||
+      stringValue(decisionSummary.score) ||
+      stringValue(v2Stats.readiness);
     const engine = displayEngineName(stringValue(data.engine));
     const scanId = stringValue(data.scan_id);
 
@@ -644,20 +663,42 @@ function renderAnalyzeSection(
 ): string {
   const data = asRecord(result);
   const v2Stats = getV2ScanStats(data);
-  const score = stringValue(v2Stats.score) || "Not available";
+  const summary = asRecord(data.summary);
+  const analysisV2 = asRecord(data.analysis_v2);
+  const decisionSummary = asRecord(analysisV2.decision_summary);
+  const score = stringValue(data.security_score) || stringValue(v2Stats.score) || stringValue(data.score) || "Not available";
   const grade = stringValue(v2Stats.grade) || "N/A";
+  const readiness = stringValue(data.readiness_score) || stringValue(decisionSummary.score) || stringValue(v2Stats.readiness) || "Not available";
   const engine = displayEngineName(stringValue(asRecord(result).engine));
+  const declaredFindings = Number(
+    stringValue(data.issues_count) || stringValue(summary.total_issues) || findings.length || 0,
+  );
   const topFindings = [...findings]
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
     .slice(0, 5);
+  if (topFindings.length === 0 && declaredFindings > 0) {
+    topFindings.push({
+      severity: "INFO",
+      message: "Issues were detected. Open the full web report for the complete breakdown.",
+    });
+  }
+  const findingsMarkup = topFindings.map((item) => {
+    const severity = String(item.severity || "INFO").toUpperCase();
+    const icon = severity === "CRITICAL" || severity === "HIGH" ? "ðŸ”´" : severity === "MEDIUM" ? "ðŸŸ " : "ðŸŸ¡";
+    return `<div class="stack-card"><strong>${icon} [${escapeHtml(severity)}]</strong><span>${escapeHtml(item.message || item.description || "Untitled finding")}</span></div>`;
+  }).join("");
+  const fallbackMarkup = declaredFindings > 0
+    ? `<div class="empty">Issues were detected. Open the full web report for the complete breakdown.</div>`
+    : `<div class="empty">No issues found.</div>`;
 
   return `
     <div class="section">
       <h2 class="section-title">Dockerfile Report Summary</h2>
       <div class="stack">
         <div class="stack-card"><strong>Security Score</strong><span>${escapeHtml(score)} - Grade ${escapeHtml(grade)}</span></div>
+        <div class="stack-card"><strong>Production Readiness</strong><span>${escapeHtml(readiness)}</span></div>
         <div class="stack-card"><strong>Engine</strong><span>${escapeHtml(engine)}</span></div>
-        <div class="stack-card"><strong>Total Findings</strong><span>${escapeHtml(String(findings.length))}</span></div>
+        <div class="stack-card"><strong>Total Findings</strong><span>${escapeHtml(String(declaredFindings))}</span></div>
       </div>
     </div>
     <div class="section">
@@ -846,7 +887,7 @@ function renderFindingsSection(
   findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
 ): string {
   if (findings.length === 0) {
-    return `<div class="empty">No issues found.</div>`;
+    return "";
   }
 
   const rows = findings.map((item) => {
