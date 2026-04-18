@@ -506,17 +506,6 @@ function extractFindings(result: unknown): Array<{ severity?: string; line?: str
   }
 
   const data = result as Record<string, unknown>;
-  const presenterSummary = getPresenterSummary(data);
-  const presenterTopIssues = asFindingArray(presenterSummary.top_issues);
-  if (presenterTopIssues.length) {
-    return presenterTopIssues;
-  }
-
-  const direct = asFindingArray(data.issues) || asFindingArray(data.findings) || asFindingArray(data.results);
-  if (direct.length) {
-    return direct;
-  }
-
   const v2Scan = data.v2_scan;
   if (v2Scan && typeof v2Scan === "object") {
     const nested = v2Scan as Record<string, unknown>;
@@ -528,6 +517,17 @@ function extractFindings(result: unknown): Array<{ severity?: string; line?: str
     if (nestedFindings.length) {
       return nestedFindings;
     }
+  }
+
+  const direct = asFindingArray(data.issues) || asFindingArray(data.findings) || asFindingArray(data.results);
+  if (direct.length) {
+    return direct;
+  }
+
+  const presenterSummary = getPresenterSummary(data);
+  const presenterTopIssues = asFindingArray(presenterSummary.top_issues);
+  if (presenterTopIssues.length) {
+    return presenterTopIssues;
   }
 
   const vulnerabilityScan = data.vulnerability_scan;
@@ -563,20 +563,17 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
 
   if (result && typeof result === "object") {
     const data = result as Record<string, unknown>;
-    const presenterSummary = getPresenterSummary(data);
-    const scoreV3 = getScoreV3(data);
-    const decisionSummary = getDecisionSummary(data);
-    const atAGlance = asRecord(presenterSummary.at_a_glance);
-    const totalFindings = stringValue(atAGlance.total_findings) || stringValue(getV2ScanStats(data).issues_found) || String(findingsCount);
-    const score = stringValue(scoreV3.score) || stringValue(decisionSummary.score) || stringValue(data.score) || stringValue((data.stats as Record<string, unknown> | undefined)?.score);
-    const scoreLabel = stringValue(presenterSummary.score_label);
-    const decision = stringValue(presenterSummary.decision_label) || stringValue(decisionSummary.decision);
+    const v2Stats = getV2ScanStats(data);
+    const totalFindings = stringValue(v2Stats.issues_found) || String(findingsCount);
+    const score = stringValue(v2Stats.score) || stringValue(data.score) || stringValue((data.stats as Record<string, unknown> | undefined)?.score);
+    const grade = stringValue(v2Stats.grade);
+    const readiness = stringValue(v2Stats.readiness);
     const engine = stringValue(data.engine);
     const scanId = stringValue(data.scan_id);
 
     stats.push({ label: "Findings", value: totalFindings });
-    if (score) stats.push({ label: "Score", value: scoreLabel ? `${score} (${scoreLabel})` : score });
-    if (decision) stats.push({ label: "Decision", value: decision });
+    if (score) stats.push({ label: "Security Score", value: grade ? `${score} (${grade})` : score });
+    if (readiness) stats.push({ label: "Readiness", value: readiness });
     if (engine) stats.push({ label: "Engine", value: engine });
     if (scanId) stats.push({ label: "Scan ID", value: scanId });
   }
@@ -614,42 +611,36 @@ function renderAnalyzeSection(
   findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
 ): string {
   const data = asRecord(result);
-  const presenterSummary = getPresenterSummary(data);
-  const decisionSummary = getDecisionSummary(data);
-  const scoreV3 = getScoreV3(data);
   const v2Stats = getV2ScanStats(data);
-  const atAGlance = asRecord(presenterSummary.at_a_glance);
-  const headline = stringValue(presenterSummary.headline) || "Review the flagged Dockerfile issues before opening the web workflow for deeper remediation.";
-  const score = stringValue(scoreV3.score) || stringValue(decisionSummary.score) || stringValue(v2Stats.score) || "Not available";
-  const riskLevel = stringValue(scoreV3.risk_level) || stringValue(decisionSummary.risk_level) || "unknown";
-  const decision = stringValue(presenterSummary.decision_label) || stringValue(decisionSummary.decision) || "review_required";
-  const scoreLabel = stringValue(presenterSummary.score_label);
-  const strengths = Array.isArray(presenterSummary.strengths) ? presenterSummary.strengths.map((item) => stringValue(item)).filter(Boolean).slice(0, 4) : [];
+  const v2Scan = asRecord(data.v2_scan);
+  const breakdown = asRecord(v2Stats.breakdown);
+  const summary = stringValue(v2Scan.summary) || "Report-aligned scan summary for the current Dockerfile.";
+  const score = stringValue(v2Stats.score) || "Not available";
+  const grade = stringValue(v2Stats.grade) || "N/A";
+  const readiness = stringValue(v2Stats.readiness) || "Needs review";
+  const baseImage = stringValue(v2Scan.base_image) || "Unknown";
   const counts = [
-    { label: "Total Findings", value: stringValue(atAGlance.total_findings) || stringValue(v2Stats.issues_found) || String(findings.length) },
-    { label: "Confirmed", value: stringValue(atAGlance.confirmed_findings) || "0" },
-    { label: "Advisory", value: stringValue(atAGlance.advisory_findings) || "0" },
-    { label: "Scanner Score", value: stringValue(v2Stats.score) || "N/A" },
+    { label: "High", value: stringValue(asRecord(breakdown.HIGH).count) || "0" },
+    { label: "Medium", value: stringValue(asRecord(breakdown.MEDIUM).count) || "0" },
+    { label: "Low", value: stringValue(asRecord(breakdown.LOW).count) || "0" },
+    { label: "Total Issues", value: stringValue(v2Stats.issues_found) || String(findings.length) },
   ];
 
   return `
     <div class="section">
-      <h2 class="section-title">Dockerfile Summary</h2>
-      <p class="section-copy">${escapeHtml(headline)}</p>
+      <h2 class="section-title">Dockerfile Report Summary</h2>
+      <p class="section-copy">${escapeHtml(summary)}</p>
       <div class="stack">
-        <div class="stack-card"><strong>Decision</strong><span>${escapeHtml(decision)}</span></div>
-        <div class="stack-card"><strong>Risk Level</strong><span>${escapeHtml(riskLevel)}</span></div>
-        <div class="stack-card"><strong>Security Score</strong><span>${escapeHtml(scoreLabel ? `${score} (${scoreLabel})` : score)}</span></div>
-        <div class="stack-card"><strong>Readiness</strong><span>${escapeHtml(stringValue(v2Stats.readiness) || "Needs review")}</span></div>
+        <div class="stack-card"><strong>Security Score</strong><span>${escapeHtml(score)}</span></div>
+        <div class="stack-card"><strong>Grade</strong><span>${escapeHtml(grade)}</span></div>
+        <div class="stack-card"><strong>Readiness</strong><span>${escapeHtml(readiness)}</span></div>
+        <div class="stack-card"><strong>Base Image</strong><span>${escapeHtml(baseImage)}</span></div>
       </div>
       <div class="stack">
         ${counts.map((item) => `
           <div class="stack-card"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.value)}</span></div>
         `).join("")}
       </div>
-      ${strengths.length
-        ? `<div class="pill-row">${strengths.map((item) => `<span class="pill">${escapeHtml(item)}</span>`).join("")}</div>`
-        : ""}
     </div>
     ${renderFindingsSection(findings)}
   `;
@@ -834,7 +825,7 @@ function renderFindingsSection(
 
   return `
     <div class="section">
-      <div class="badge">${findings.length} top issue${findings.length > 1 ? "s" : ""}</div>
+      <div class="badge">${findings.length} issue${findings.length > 1 ? "s" : ""}</div>
       <table>
         <thead>
           <tr><th>Severity</th><th>Line</th><th>Description</th></tr>
@@ -847,22 +838,6 @@ function renderFindingsSection(
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
-}
-
-function getAnalysisV2(data: Record<string, unknown>): Record<string, unknown> {
-  return asRecord(data.analysis_v2);
-}
-
-function getPresenterSummary(data: Record<string, unknown>): Record<string, unknown> {
-  return asRecord(getAnalysisV2(data).presenter_summary);
-}
-
-function getDecisionSummary(data: Record<string, unknown>): Record<string, unknown> {
-  return asRecord(getAnalysisV2(data).decision_summary);
-}
-
-function getScoreV3(data: Record<string, unknown>): Record<string, unknown> {
-  return asRecord(getAnalysisV2(data).score_v3);
 }
 
 function getV2ScanStats(data: Record<string, unknown>): Record<string, unknown> {
