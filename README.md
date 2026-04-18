@@ -1,6 +1,8 @@
 # ShieldOps AI for VS Code
 
-![ShieldOps AI hero](images/marketplace-hero.svg)
+<p align="center">
+  <img src="images/icon.png" alt="ShieldOps AI" width="128" height="128" />
+</p>
 
 ShieldOps AI brings core container and infrastructure workflows into VS Code while staying aligned with the live ShieldOps backend. The current release is API-first for supported tasks, with safe web fallback where the product flow is still page-first.
 
@@ -18,8 +20,6 @@ ShieldOps AI brings core container and infrastructure workflows into VS Code whi
 - Send supported tasks directly to the ShieldOps backend without copying payloads manually.
 - Review structured findings inside a dedicated VS Code results panel.
 - Fall back to the web app only when the current product journey is still page-first.
-
-![ShieldOps AI workflow](images/marketplace-workflow.svg)
 
 ## How V1 Works
 
