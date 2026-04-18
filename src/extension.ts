@@ -153,7 +153,7 @@ function registerTaskCommand(
         const scanId = (payload.result as any)?.scan_id;
         let targetRoute = payload.route || TASK_ROUTE_MAP[task];
         if (scanId) {
-          targetRoute = `/dockerfile?scan_id=${scanId}`;
+          targetRoute = `/analyze/report_view?scan_id=${scanId}`;
         }
         await openExternal(baseUrl, targetRoute);
       }
