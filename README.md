@@ -59,7 +59,7 @@ The extension exposes one setting:
 Default:
 
 ```json
-"shieldopsAI.baseUrl": "http://127.0.0.1:5000",
+"shieldopsAI.baseUrl": "https://docker-analyzer-42bu.onrender.com",
 "shieldopsAI.apiToken": ""
 ```
 
@@ -77,7 +77,7 @@ Change `baseUrl` if your ShieldOps app runs on another host or port. `apiToken` 
 
 ## Marketplace Notes
 
-- Current release: `v0.0.2`
+- Current release: `v0.0.9`
 - Publisher: `mohammedabdallahcv`
 - Marketplace page: `mohammedabdallahcv.shieldops-ai`
 
