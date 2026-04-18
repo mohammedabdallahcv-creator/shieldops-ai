@@ -6,6 +6,11 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-04-18
+
+- Preserved the backend-provided report route so VS Code report links keep the extension origin context.
+- Fixed the web-report handoff for extension-triggered CVE guidance.
+
 ## [2.0.0] - 2026-04-18
 
 - Engine renamed from `heuristic` to `ShieldOps AI Engine`.

@@ -158,11 +158,7 @@ function registerTaskCommand(
       );
 
       if (choice === "Open in Web App") {
-        const scanId = (payload.result as any)?.scan_id;
         let targetRoute = payload.route || TASK_ROUTE_MAP[task];
-        if (scanId) {
-          targetRoute = `/analyze/report_view?scan_id=${scanId}`;
-        }
         await openExternal(baseUrl, targetRoute);
       }
     } catch (error) {
@@ -935,10 +931,14 @@ function displayEngineName(value?: string): string {
 }
 
 function buildWebAppUrl(baseUrl: string, task: ShieldOpsTask, payload: ExtensionApiResponse): string {
+  const route = stringValue(payload.route);
+  if (route) {
+    return `${baseUrl}${route}`;
+  }
   const result = asRecord(payload.result);
   const scanId = stringValue(result.scan_id);
   if (task === "analyze" && scanId) {
-    return `${baseUrl}/analyze/report_view?scan_id=${encodeURIComponent(scanId)}`;
+    return `${baseUrl}/analyze/report_view?scan_id=${encodeURIComponent(scanId)}&origin=extension`;
   }
   return `${baseUrl}${String(payload.route || TASK_ROUTE_MAP[task] || "/")}`;
 }
