@@ -21,6 +21,14 @@ type ExtensionApiResponse = {
   details?: string;
 };
 
+type FindingRow = {
+  ruleId?: string;
+  severity?: string;
+  line?: string | number;
+  message?: string;
+  description?: string;
+};
+
 const TASK_ROUTE_MAP: Record<ShieldOpsTask, string> = {
   analyze: "/",
   autofix: "/autofix",
@@ -253,13 +261,13 @@ function validateDocumentForTask(document: vscode.TextDocument, task: ShieldOpsT
 
 function buildBaseUrl(): string {
   const config = vscode.workspace.getConfiguration("shieldopsAI");
-  const configured = String(config.get("baseUrl") || "https://shieldops-ai.onrender.com").trim();
+  const configured = String(config.get("baseUrl") || "https://docker-analyzer-42bu.onrender.com").trim();
   const normalized = configured.replace(/\/+$/, "");
   if (!normalized) {
-    return "https://shieldops-ai.onrender.com";
+    return "https://docker-analyzer-42bu.onrender.com";
   }
   if (/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(normalized)) {
-    return "https://shieldops-ai.onrender.com";
+    return "https://docker-analyzer-42bu.onrender.com";
   }
   return normalized;
 }
@@ -290,6 +298,7 @@ async function showResultPanel(
   const summary = escapeHtml(payload.summary || `${TASK_LABELS[task]} completed.`);
   const title = escapeHtml(payload.title || TASK_LABELS[task]);
   const route = escapeHtml(payload.route || TASK_ROUTE_MAP[task]);
+  const webAppUrl = escapeHtml(buildWebAppUrl(buildBaseUrl(), task, payload));
   const result = payload.result;
   const findings = extractFindings(result);
   const stats = extractStats(result, findings.length);
@@ -299,7 +308,7 @@ async function showResultPanel(
       <span>${escapeHtml(item.value)}</span>
     </div>
   `).join("");
-  const taskBody = renderTaskBody(task, result, findings);
+  const taskBody = renderTaskBody(task, result, findings, webAppUrl);
 
   panel.webview.html = `<!DOCTYPE html>
   <html lang="en">
@@ -500,7 +509,7 @@ async function showResultPanel(
   </html>`;
 }
 
-function extractFindings(result: unknown): Array<{ severity?: string; line?: string | number; message?: string; description?: string }> {
+function extractFindings(result: unknown): FindingRow[] {
   if (!result || typeof result !== "object") {
     return [];
   }
@@ -515,25 +524,25 @@ function extractFindings(result: unknown): Array<{ severity?: string; line?: str
       asFindingArray(nested.results) ||
       asFindingArray(nested.all_issues);
     if (nestedFindings.length) {
-      return nestedFindings;
+      return dedupeFindings(nestedFindings);
     }
   }
 
   const direct = asFindingArray(data.issues) || asFindingArray(data.findings) || asFindingArray(data.results);
   if (direct.length) {
-    return direct;
+    return dedupeFindings(direct);
   }
 
   const vulnerabilityScan = data.vulnerability_scan;
   if (vulnerabilityScan && typeof vulnerabilityScan === "object") {
     const vulnerabilities = (vulnerabilityScan as Record<string, unknown>).vulnerabilities;
-    return asFindingArray(vulnerabilities);
+    return dedupeFindings(asFindingArray(vulnerabilities));
   }
 
   return [];
 }
 
-function asFindingArray(value: unknown): Array<{ severity?: string; line?: string | number; message?: string; description?: string }> {
+function asFindingArray(value: unknown): FindingRow[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -544,12 +553,43 @@ function asFindingArray(value: unknown): Array<{ severity?: string; line?: strin
     }
     const row = item as Record<string, unknown>;
     return {
+      ruleId: stringValue(row.rule_id || row.ruleId || row.id),
       severity: String(row.adjusted_severity || row.severity || row.level || row.priority || "INFO").toUpperCase(),
       line: normalizeLine(row.line ?? row.line_number ?? row.lineno),
       message: stringValue(row.message) || stringValue(row.title) || stringValue(row.summary),
       description: stringValue(row.description) || stringValue(row.issue) || stringValue(row.recommendation) || stringValue(row.why_it_matters),
     };
   }).filter((item) => item.message || item.description);
+}
+
+function canonicalRuleId(value?: string): string {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "pip-no-cache-dir-missing") return "pip-no-cache";
+  if (normalized === "workdir-position-check") return "workdir-after-copy";
+  return normalized;
+}
+
+function dedupeFindings(findings: FindingRow[]): FindingRow[] {
+  const deduped = new Map<string, FindingRow>();
+  for (const item of findings) {
+    const key = [
+      canonicalRuleId(item.ruleId),
+      String(item.line || ""),
+      String(item.message || item.description || "").trim().toLowerCase(),
+    ].join("|");
+    if (!deduped.has(key)) {
+      deduped.set(key, item);
+      continue;
+    }
+    const existing = deduped.get(key)!;
+    if (!existing.description && item.description) {
+      existing.description = item.description;
+    }
+    if (!existing.message && item.message) {
+      existing.message = item.message;
+    }
+  }
+  return [...deduped.values()];
 }
 
 function extractStats(result: unknown, findingsCount: number): Array<{ label: string; value: string }> {
@@ -562,7 +602,7 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
     const score = stringValue(v2Stats.score) || stringValue(data.score) || stringValue((data.stats as Record<string, unknown> | undefined)?.score);
     const grade = stringValue(v2Stats.grade);
     const readiness = stringValue(v2Stats.readiness);
-    const engine = stringValue(data.engine);
+    const engine = displayEngineName(stringValue(data.engine));
     const scanId = stringValue(data.scan_id);
 
     stats.push({ label: "Findings", value: totalFindings });
@@ -578,11 +618,12 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
 function renderTaskBody(
   task: ShieldOpsTask,
   result: unknown,
-  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+  findings: FindingRow[],
+  webAppUrl: string,
 ): string {
   switch (task) {
     case "analyze":
-      return renderAnalyzeSection(result, findings);
+      return renderAnalyzeSection(result, findings, webAppUrl);
     case "autofix":
       return renderAutofixSection(result, findings);
     case "sbom":
@@ -602,41 +643,50 @@ function renderTaskBody(
 
 function renderAnalyzeSection(
   result: unknown,
-  findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
+  findings: FindingRow[],
+  webAppUrl: string,
 ): string {
   const data = asRecord(result);
   const v2Stats = getV2ScanStats(data);
-  const v2Scan = asRecord(data.v2_scan);
-  const breakdown = asRecord(v2Stats.breakdown);
-  const summary = stringValue(v2Scan.summary) || "Report-aligned scan summary for the current Dockerfile.";
   const score = stringValue(v2Stats.score) || "Not available";
   const grade = stringValue(v2Stats.grade) || "N/A";
-  const readiness = stringValue(v2Stats.readiness) || "Needs review";
-  const baseImage = stringValue(v2Scan.base_image) || "Unknown";
-  const counts = [
-    { label: "High", value: stringValue(asRecord(breakdown.HIGH).count) || "0" },
-    { label: "Medium", value: stringValue(asRecord(breakdown.MEDIUM).count) || "0" },
-    { label: "Low", value: stringValue(asRecord(breakdown.LOW).count) || "0" },
-    { label: "Total Issues", value: stringValue(v2Stats.issues_found) || String(findings.length) },
-  ];
+  const engine = displayEngineName(stringValue(asRecord(result).engine));
+  const topFindings = [...findings]
+    .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
+    .slice(0, 5);
 
   return `
     <div class="section">
       <h2 class="section-title">Dockerfile Report Summary</h2>
-      <p class="section-copy">${escapeHtml(summary)}</p>
       <div class="stack">
-        <div class="stack-card"><strong>Security Score</strong><span>${escapeHtml(score)}</span></div>
-        <div class="stack-card"><strong>Grade</strong><span>${escapeHtml(grade)}</span></div>
-        <div class="stack-card"><strong>Readiness</strong><span>${escapeHtml(readiness)}</span></div>
-        <div class="stack-card"><strong>Base Image</strong><span>${escapeHtml(baseImage)}</span></div>
-      </div>
-      <div class="stack">
-        ${counts.map((item) => `
-          <div class="stack-card"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.value)}</span></div>
-        `).join("")}
+        <div class="stack-card"><strong>Security Score</strong><span>${escapeHtml(score)} - Grade ${escapeHtml(grade)}</span></div>
+        <div class="stack-card"><strong>Engine</strong><span>${escapeHtml(engine)}</span></div>
+        <div class="stack-card"><strong>Total Findings</strong><span>${escapeHtml(String(findings.length))}</span></div>
       </div>
     </div>
-    ${renderFindingsSection(findings)}
+    <div class="section">
+      <h2 class="section-title">Top Findings</h2>
+      <p class="section-copy">The panel keeps the top 5 findings in view. Open the full report for the complete breakdown.</p>
+      <div class="stack">
+        ${topFindings.map((item) => {
+          const severity = String(item.severity || "INFO").toUpperCase();
+          const icon = severity === "CRITICAL" || severity === "HIGH" ? "🔴" : severity === "MEDIUM" ? "🟠" : "🟡";
+          return `<div class="stack-card"><strong>${icon} [${escapeHtml(severity)}]</strong><span>${escapeHtml(item.message || item.description || "Untitled finding")}</span></div>`;
+        }).join("") || `<div class="empty">No issues found.</div>`}
+      </div>
+    </div>
+    <div class="section">
+      <h2 class="section-title">CVE Scan</h2>
+      <p class="section-copy">CVE scanning is not executed inside VS Code. Run it manually on the platform to fetch vulnerability IDs, CVSS scores, and fixed versions.</p>
+      <div class="pill-row">
+        <span class="pill">Status: Not Started</span>
+        <a class="pill" href="${webAppUrl}#cve">Run Manual CVE Scan</a>
+      </div>
+    </div>
+    <div class="section">
+      <h2 class="section-title">Full Report</h2>
+      <p class="section-copy"><a class="pill" href="${webAppUrl}">Open Full Report</a></p>
+    </div>
   `;
 }
 
@@ -865,6 +915,32 @@ function severityColor(value?: string): string {
   if (severity === "MEDIUM") return "#f59e0b";
   if (severity === "LOW") return "#10b981";
   return "#06B6D4";
+}
+
+function severityRank(value?: string): number {
+  const severity = String(value || "INFO").toUpperCase();
+  if (severity === "CRITICAL") return 4;
+  if (severity === "HIGH") return 3;
+  if (severity === "MEDIUM") return 2;
+  if (severity === "LOW") return 1;
+  return 0;
+}
+
+function displayEngineName(value?: string): string {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["", "heuristic", "internal", "ai", "shieldops ai engine"].includes(normalized)) {
+    return "ShieldOps AI Engine";
+  }
+  return String(value || "ShieldOps AI Engine");
+}
+
+function buildWebAppUrl(baseUrl: string, task: ShieldOpsTask, payload: ExtensionApiResponse): string {
+  const result = asRecord(payload.result);
+  const scanId = stringValue(result.scan_id);
+  if (task === "analyze" && scanId) {
+    return `${baseUrl}/analyze/report_view?scan_id=${encodeURIComponent(scanId)}`;
+  }
+  return `${baseUrl}${String(payload.route || TASK_ROUTE_MAP[task] || "/")}`;
 }
 
 async function safeJson(response: Response): Promise<unknown> {

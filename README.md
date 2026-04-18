@@ -77,7 +77,7 @@ Change `baseUrl` if your ShieldOps app runs on another host or port. `apiToken` 
 
 ## Marketplace Notes
 
-- Current release: `v0.0.9`
+- Current release: `v2.0.0`
 - Publisher: `mohammedabdallahcv`
 - Marketplace page: `mohammedabdallahcv.shieldops-ai`
 
