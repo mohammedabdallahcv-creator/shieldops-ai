@@ -524,12 +524,6 @@ function extractFindings(result: unknown): Array<{ severity?: string; line?: str
     return direct;
   }
 
-  const presenterSummary = getPresenterSummary(data);
-  const presenterTopIssues = asFindingArray(presenterSummary.top_issues);
-  if (presenterTopIssues.length) {
-    return presenterTopIssues;
-  }
-
   const vulnerabilityScan = data.vulnerability_scan;
   if (vulnerabilityScan && typeof vulnerabilityScan === "object") {
     const vulnerabilities = (vulnerabilityScan as Record<string, unknown>).vulnerabilities;
