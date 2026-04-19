@@ -519,17 +519,18 @@ function extractFindings(result: unknown): FindingRow[] {
   const v2Scan = data.v2_scan;
   if (v2Scan && typeof v2Scan === "object") {
     const nested = v2Scan as Record<string, unknown>;
-    const nestedFindings =
-      asFindingArray(nested.issues) ||
-      asFindingArray(nested.findings) ||
-      asFindingArray(nested.results) ||
-      asFindingArray(nested.all_issues);
+    const nestedFindings = firstNonEmptyFindingArray(
+      nested.issues,
+      nested.findings,
+      nested.results,
+      nested.all_issues,
+    );
     if (nestedFindings.length) {
       return dedupeFindings(nestedFindings);
     }
   }
 
-  const direct = asFindingArray(data.issues) || asFindingArray(data.findings) || asFindingArray(data.results);
+  const direct = firstNonEmptyFindingArray(data.issues, data.findings, data.results);
   if (direct.length) {
     return dedupeFindings(direct);
   }
@@ -540,6 +541,16 @@ function extractFindings(result: unknown): FindingRow[] {
     return dedupeFindings(asFindingArray(vulnerabilities));
   }
 
+  return [];
+}
+
+function firstNonEmptyFindingArray(...values: unknown[]): FindingRow[] {
+  for (const value of values) {
+    const findings = asFindingArray(value);
+    if (findings.length) {
+      return findings;
+    }
+  }
   return [];
 }
 
@@ -671,7 +682,10 @@ function renderAnalyzeSection(
   const readiness = stringValue(data.readiness_score) || stringValue(decisionSummary.score) || stringValue(v2Stats.readiness) || "Not available";
   const engine = displayEngineName(stringValue(asRecord(result).engine));
   const declaredFindings = Number(
-    stringValue(data.issues_count) || stringValue(summary.total_issues) || findings.length || 0,
+    stringValue(v2Stats.issues_found) ||
+      stringValue(data.issues_count) ||
+      stringValue(summary.total_issues) ||
+      String(findings.length),
   );
   const topFindings = [...findings]
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
@@ -709,7 +723,7 @@ function renderAnalyzeSection(
           const severity = String(item.severity || "INFO").toUpperCase();
           const icon = severity === "CRITICAL" || severity === "HIGH" ? "🔴" : severity === "MEDIUM" ? "🟠" : "🟡";
           return `<div class="stack-card"><strong>${icon} [${escapeHtml(severity)}]</strong><span>${escapeHtml(item.message || item.description || "Untitled finding")}</span></div>`;
-        }).join("") || `<div class="empty">No issues found.</div>`}
+        }).join("") || fallbackMarkup}
       </div>
     </div>
     <div class="section">
