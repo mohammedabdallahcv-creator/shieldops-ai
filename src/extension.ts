@@ -48,6 +48,14 @@ type FindingRow = {
   description?: string;
 };
 
+type AnalyzeViewData = {
+  result: unknown;
+  findings: FindingRow[];
+  webAppUrl: string;
+  payload?: ExtensionApiResponse;
+  fileName?: string;
+};
+
 const TASK_ROUTE_MAP: Record<ShieldOpsTask, string> = {
   analyze: "/",
   autofix: "/autofix",
@@ -77,6 +85,632 @@ const TASK_ALLOWED_EXTENSIONS: Record<ShieldOpsTask, string[]> = {
   cost: [".dockerfile", ""],
   compose_generator: [".dockerfile", ""],
 };
+
+const USE_LEAN_UI = true;
+
+const v2Styles = `
+<style>
+.card-lean {
+  max-width: 940px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.legacy-shell-hidden {
+  display: none;
+}
+
+.shieldops-v2 {
+  padding: 20px;
+  color: #e6edf3;
+}
+
+.shieldops-v2,
+.shieldops-v2 * {
+  box-sizing: border-box;
+}
+
+.shieldops-v2 {
+  overflow-wrap: anywhere;
+}
+
+.shieldops-v2-badge {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(123, 97, 255, 0.12);
+  border: 1px solid rgba(123, 97, 255, 0.24);
+  color: #cbb6ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.shieldops-v2-title {
+  margin: 0 0 8px;
+  font-size: 34px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.shieldops-v2-subtitle {
+  margin-bottom: 20px;
+  color: #9fb0c0;
+  line-height: 1.7;
+}
+
+.v2-hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.v2-metric,
+.v2-decision,
+.v2-section,
+.v2-details {
+  border: 1px solid rgba(80, 140, 255, 0.15);
+  border-radius: 18px;
+  background: rgba(8, 12, 28, 0.85);
+}
+
+.v2-metric {
+  padding: 18px;
+}
+
+.v2-metric-label {
+  margin-bottom: 8px;
+  color: #9fb0c0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.v2-metric-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.v2-metric-value span {
+  color: #b8c7d6;
+  font-size: 18px;
+}
+
+.v2-decision {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+}
+
+.v2-decision.high {
+  border-color: rgba(255, 106, 106, 0.28);
+  background: rgba(255, 70, 70, 0.06);
+}
+
+.v2-decision.medium {
+  border-color: rgba(255, 208, 92, 0.28);
+  background: rgba(255, 208, 92, 0.06);
+}
+
+.v2-decision.low {
+  border-color: rgba(102, 240, 179, 0.28);
+  background: rgba(102, 240, 179, 0.06);
+}
+
+.v2-decision.neutral {
+  border-color: rgba(80, 140, 255, 0.15);
+  background: rgba(8, 12, 28, 0.85);
+}
+
+.v2-decision-label {
+  margin-bottom: 6px;
+  color: #ffb86b;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.v2-decision-text {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.v2-section {
+  margin-bottom: 16px;
+  padding: 16px 18px;
+}
+
+.v2-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.v2-section-title {
+  margin-bottom: 10px;
+  color: #d8e4ff;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.v2-section-header .v2-section-title {
+  margin-bottom: 0;
+}
+
+.v2-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.v2-findings-note {
+  margin-bottom: 12px;
+  color: #93a4b5;
+  line-height: 1.6;
+}
+
+.v2-findings {
+  display: grid;
+  gap: 12px;
+}
+
+.v2-finding-card {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(14, 20, 38, 0.95);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.v2-finding-card:first-child {
+  border-color: rgba(255, 178, 92, 0.34);
+  box-shadow: 0 0 0 1px rgba(255, 178, 92, 0.10);
+}
+
+.v2-finding-severity {
+  display: inline-block;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
+.v2-severity-critical { color: #ff6b8a; }
+.v2-severity-high { color: #ffb25c; }
+.v2-severity-medium { color: #ffd36a; }
+.v2-severity-low { color: #76d9ff; }
+.v2-severity-info { color: #66f0b3; }
+
+.v2-finding-title {
+  margin-bottom: 8px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.v2-finding-desc {
+  color: #a9b8c8;
+  line-height: 1.7;
+}
+
+.v2-collapsible[data-collapsed="true"] .v2-collapsible-item.is-extra {
+  display: none;
+}
+
+.v2-list {
+  display: grid;
+  gap: 10px;
+}
+
+.v2-list-item {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: flex-start;
+  color: #dce7f2;
+  line-height: 1.7;
+}
+
+.v2-list-text,
+.v2-finding-title,
+.v2-finding-desc,
+.v2-detail-value,
+.v2-empty-state {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.v2-list-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(0, 212, 255, 0.12);
+  color: #7ee7ff;
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.v2-copy-btn,
+.v2-collapse-btn,
+.v2-secondary-btn {
+  border: 1px solid rgba(126, 231, 255, 0.22);
+  border-radius: 8px;
+  background: rgba(126, 231, 255, 0.08);
+  color: #9fdcff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.v2-copy-btn {
+  min-width: 70px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.v2-copy-btn.is-copied {
+  border-color: rgba(102, 240, 179, 0.35);
+  background: rgba(102, 240, 179, 0.12);
+  color: #66f0b3;
+}
+
+.v2-collapse-btn,
+.v2-secondary-btn {
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.v2-copy-btn:hover,
+.v2-collapse-btn:hover,
+.v2-secondary-btn:hover {
+  border-color: rgba(126, 231, 255, 0.42);
+  background: rgba(126, 231, 255, 0.14);
+}
+
+.v2-copy-btn:disabled,
+.v2-collapse-btn:disabled,
+.v2-secondary-btn:disabled,
+.shieldops-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.v2-details {
+  margin-bottom: 16px;
+  padding: 14px 18px;
+}
+
+.v2-details summary {
+  cursor: pointer;
+  color: #9fdcff;
+  font-weight: 700;
+}
+
+.v2-details-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.v2-detail-card {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(14, 20, 38, 0.95);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.v2-detail-label {
+  margin-bottom: 6px;
+  color: #93a4b5;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.v2-detail-value {
+  color: #ffffff;
+  line-height: 1.7;
+}
+
+.v2-actions {
+  display: flex;
+  justify-content: stretch;
+}
+
+.v2-actions .shieldops-btn,
+.v2-actions button {
+  width: 100%;
+  min-height: 44px;
+  font-weight: 800;
+}
+
+.v2-full-report {
+  margin-bottom: 0;
+}
+
+.v2-empty-state,
+.v2-loading-state,
+.v2-error-state {
+  border: 1px dashed rgba(159, 220, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(14, 20, 38, 0.72);
+  color: #a9b8c8;
+  line-height: 1.7;
+  padding: 14px;
+}
+
+.v2-loading-state,
+.v2-error-state {
+  margin-bottom: 16px;
+}
+
+.v2-loading-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v2-loading-state[hidden] {
+  display: none;
+}
+
+.v2-loading-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #7ee7ff;
+  box-shadow: 0 0 0 rgba(126, 231, 255, 0.45);
+  animation: v2Pulse 1.15s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.v2-error-state {
+  border-color: rgba(255, 106, 106, 0.26);
+  background: rgba(255, 70, 70, 0.06);
+}
+
+.v2-error-title {
+  margin-bottom: 6px;
+  color: #ffb0b0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.v2-error-copy {
+  margin-bottom: 12px;
+  color: #ffd6d6;
+}
+
+.v2-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.shieldops-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.shieldops-btn-primary {
+  background: #8a73ff;
+  border-color: rgba(203, 182, 255, 0.38);
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgba(123, 97, 255, 0.26);
+}
+
+.shieldops-btn-primary:hover {
+  background: #9a86ff;
+  border-color: rgba(203, 182, 255, 0.52);
+}
+
+@keyframes v2Pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(126, 231, 255, 0.34);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(126, 231, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(126, 231, 255, 0);
+  }
+}
+
+@media (max-width: 700px) {
+  .v2-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .shieldops-v2-title {
+    font-size: 28px;
+  }
+
+  .v2-list-item {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .v2-copy-btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .v2-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .v2-section-actions,
+  .v2-collapse-btn {
+    width: 100%;
+  }
+
+  .v2-error-actions {
+    flex-direction: column;
+  }
+}
+</style>
+`;
+
+function renderResultPanelScript(nonce: string): string {
+  return `
+      <script nonce="${nonce}">
+        (() => {
+          const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
+          let loading = false;
+          const loadingState = document.querySelector("[data-loading-state]");
+          const loadingLabel = document.querySelector("[data-loading-label]");
+
+          function setLoading(next, label) {
+            loading = next;
+            document.body.classList.toggle("is-loading", next);
+            if (loadingState) {
+              loadingState.hidden = !next;
+            }
+            if (loadingLabel && label) {
+              loadingLabel.textContent = label;
+            }
+            for (const control of document.querySelectorAll("[data-disable-on-loading]")) {
+              if ("disabled" in control) {
+                control.disabled = next;
+              } else {
+                control.setAttribute("aria-disabled", String(next));
+              }
+            }
+          }
+
+          async function copyPlainText(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(text);
+              return;
+            }
+
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.setAttribute("readonly", "true");
+            textarea.style.position = "fixed";
+            textarea.style.left = "-9999px";
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            textarea.remove();
+          }
+
+          function showCopied(button) {
+            const original = button.getAttribute("data-original-label") || button.textContent || "Copy";
+            button.setAttribute("data-original-label", original);
+            button.textContent = "Copied";
+            button.classList.add("is-copied");
+            window.setTimeout(() => {
+              button.textContent = original;
+              button.classList.remove("is-copied");
+            }, 1200);
+          }
+
+          document.addEventListener("click", async (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target) {
+              return;
+            }
+
+            const disabledLink = target.closest("a[aria-disabled='true']");
+            if (disabledLink) {
+              event.preventDefault();
+              return;
+            }
+
+            const toggleButton = target.closest("[data-toggle-collapse]");
+            if (toggleButton) {
+              event.preventDefault();
+              const collapseId = toggleButton.getAttribute("data-toggle-collapse");
+              const section = document.querySelector("[data-collapse-id='" + collapseId + "']");
+              if (!section) {
+                return;
+              }
+              const isCollapsed = section.getAttribute("data-collapsed") !== "false";
+              section.setAttribute("data-collapsed", isCollapsed ? "false" : "true");
+              toggleButton.textContent = isCollapsed ? "Show Less" : "Show All";
+              toggleButton.setAttribute("aria-expanded", String(isCollapsed));
+              return;
+            }
+
+            const copyButton = target.closest("[data-copy-text]");
+            if (copyButton) {
+              event.preventDefault();
+              if (loading) {
+                return;
+              }
+              const text = copyButton.getAttribute("data-copy-text") || "";
+              try {
+                await copyPlainText(text);
+                showCopied(copyButton);
+              } catch {
+                copyButton.textContent = "Failed";
+                window.setTimeout(() => {
+                  copyButton.textContent = copyButton.getAttribute("data-original-label") || "Copy";
+                }, 1200);
+              }
+              return;
+            }
+
+            const reportButton = target.closest("[data-open-report]");
+            if (reportButton) {
+              event.preventDefault();
+              if (loading) {
+                return;
+              }
+              setLoading(true, "Opening full report...");
+              if (vscode) {
+                vscode.postMessage({
+                  command: "openReport",
+                  url: reportButton.getAttribute("data-open-report") || ""
+                });
+              }
+              window.setTimeout(() => setLoading(false), 900);
+              return;
+            }
+
+            const retryButton = target.closest("[data-retry-analysis]");
+            if (retryButton) {
+              event.preventDefault();
+              if (loading) {
+                return;
+              }
+              setLoading(true, "Retrying analysis...");
+              if (vscode) {
+                vscode.postMessage({ command: "retryAnalysis" });
+              }
+            }
+          });
+        })();
+      </script>
+  `;
+}
 
 export function activate(context: vscode.ExtensionContext) {
   const registrations = [
@@ -297,6 +931,20 @@ async function openExternal(baseUrl: string, target: string | vscode.Uri) {
   await vscode.env.openExternal(uri);
 }
 
+function normalizeExternalUrl(target: string, baseUrl: string): string {
+  const trimmed = target.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  if (trimmed.startsWith("/")) {
+    return `${baseUrl}${trimmed}`;
+  }
+  return "";
+}
+
 async function showResultPanel(
   context: vscode.ExtensionContext,
   task: ShieldOpsTask,
@@ -307,8 +955,23 @@ async function showResultPanel(
     "shieldopsResult",
     `ShieldOps AI: ${TASK_LABELS[task]}`,
     vscode.ViewColumn.Beside,
-    { enableFindWidget: true },
+    { enableFindWidget: true, enableScripts: true },
   );
+  const nonce = getNonce();
+
+  panel.webview.onDidReceiveMessage(async (message) => {
+    const command = String(message?.command || "");
+    if (command === "openReport") {
+      const targetUrl = normalizeExternalUrl(String(message?.url || ""), buildBaseUrl());
+      if (targetUrl) {
+        await vscode.env.openExternal(vscode.Uri.parse(targetUrl));
+      }
+      return;
+    }
+    if (command === "retryAnalysis" && task === "analyze") {
+      await vscode.commands.executeCommand("shieldops-ai.analyzeCurrentFile");
+    }
+  });
 
   const summary = escapeHtml(payload.summary || `${TASK_LABELS[task]} completed.`);
   const title = escapeHtml(payload.title || TASK_LABELS[task]);
@@ -323,14 +986,15 @@ async function showResultPanel(
       <span>${escapeHtml(item.value)}</span>
     </div>
   `).join("");
-  const taskBody = renderTaskBody(task, result, findings, webAppUrl);
+  const taskBody = renderTaskBody(task, result, findings, webAppUrl, payload, fileName);
+  const useLeanAnalyzeUi = task === "analyze" && USE_LEAN_UI;
 
   panel.webview.html = `<!DOCTYPE html>
   <html lang="en">
     <head>
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';" />
+      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
       <style>
         body {
           margin: 0;
@@ -504,9 +1168,11 @@ async function showResultPanel(
           color: #7b8299;
         }
       </style>
+      ${v2Styles}
     </head>
     <body>
-      <div class="card">
+      <div class="card${useLeanAnalyzeUi ? " card-lean" : ""}">
+        <div class="${useLeanAnalyzeUi ? "legacy-shell-hidden" : ""}">
         <div class="eyebrow">ShieldOps AI</div>
         <h1>${title}</h1>
         <p class="sub">ShieldOps AI — ${new Date().toLocaleTimeString()}</p>
@@ -518,8 +1184,10 @@ async function showResultPanel(
             <div class="meta-card"><strong>Web Route</strong><span>${route}</span></div>
           `}
         </div>
+        </div>
         ${taskBody}
       </div>
+      ${renderResultPanelScript(nonce)}
     </body>
   </html>`;
 }
@@ -673,10 +1341,12 @@ function renderTaskBody(
   result: unknown,
   findings: FindingRow[],
   webAppUrl: string,
+  payload?: ExtensionApiResponse,
+  fileName?: string,
 ): string {
   switch (task) {
     case "analyze":
-      return renderAnalyzeSection(result, findings, webAppUrl);
+      return renderAnalyzeSection({ result, findings, webAppUrl, payload, fileName });
     case "autofix":
       return renderAutofixSection(result, findings);
     case "sbom":
@@ -694,11 +1364,296 @@ function renderTaskBody(
   }
 }
 
-function renderAnalyzeSection(
-  result: unknown,
-  findings: FindingRow[],
-  webAppUrl: string,
-): string {
+function renderAnalyzeSection(data: AnalyzeViewData): string {
+  return USE_LEAN_UI
+    ? renderAnalyzeSectionV2(data)
+    : renderAnalyzeSectionV1(data);
+}
+
+function renderAnalyzeSectionV2(viewData: AnalyzeViewData): string {
+  const { result, findings, webAppUrl, payload, fileName } = viewData;
+  const data = asRecord(result);
+  const reportContract = asRecord(data.report_contract);
+  const contract = getReportContract(data);
+  const v2Stats = getV2ScanStats(data);
+  const analysisV2 = asRecord(data.analysis_v2);
+  const decisionSummary = asRecord(analysisV2.decision_summary);
+  const scoreV3 = asRecord(analysisV2.score_v3);
+
+  const displayFindings =
+    contract.detailedIssues && contract.detailedIssues.length > 0
+      ? contract.detailedIssues
+      : findings;
+
+  const securityPercent =
+    formatPercent(reportContract.security_score_percent) ||
+    contract.securityScore ||
+    formatPercent(reportContract.security_score) ||
+    formatPercent(data.security_score) ||
+    formatPercent(decisionSummary.score) ||
+    formatPercent(data.score) ||
+    formatPercent(v2Stats.score) ||
+    "0%";
+
+  const securityGrade =
+    contract.securityScoreGrade ||
+    stringValue(reportContract.security_score_grade) ||
+    stringValue(v2Stats.grade) ||
+    "N/A";
+
+  const readinessPercent =
+    formatPercent(reportContract.production_readiness_percent) ||
+    contract.readinessScore ||
+    formatPercent(reportContract.readiness_score) ||
+    formatPercent(scoreV3.score) ||
+    formatPercent(data.readiness_score) ||
+    formatPercent(v2Stats.score) ||
+    stringValue(v2Stats.readiness) ||
+    "0%";
+
+  const readinessGrade =
+    contract.readinessGrade ||
+    stringValue(reportContract.production_readiness_grade) ||
+    stringValue(reportContract.readiness_grade) ||
+    "N/A";
+
+  const totalFindings =
+    contract.totalIssues ||
+    stringValue(reportContract.total_issues) ||
+    stringValue(data.issues_count) ||
+    String(displayFindings.length);
+  const numericTotalFindings = Number(totalFindings) || displayFindings.length;
+
+  const criticalCount = contract.criticalCount || stringValue(reportContract.critical_count) || "0";
+  const highCount = contract.highCount || stringValue(reportContract.high_count) || "0";
+  const mediumCount = contract.mediumCount || stringValue(reportContract.medium_count) || "0";
+  const lowCount = contract.lowCount || stringValue(reportContract.low_count) || "0";
+
+  const decision = contract.decisionContract;
+  const quickActions = contract.quickActions ?? [];
+  const topFindings = [...displayFindings]
+    .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
+    .filter((item) => item.message || item.description);
+
+  const riskLabel =
+    stringValue(decision?.risk_label) ||
+    stringValue(decision?.risk_level) ||
+    "Review recommended";
+
+  const decisionText =
+    stringValue(decision?.decision_text) ||
+    stringValue(decision?.decision) ||
+    "Review required before release";
+
+  const rawRisk = String(riskLabel || "").toLowerCase();
+  const riskClass = rawRisk.includes("high")
+    ? "high"
+    : rawRisk.includes("medium")
+      ? "medium"
+      : rawRisk.includes("low")
+        ? "low"
+        : "neutral";
+
+  const analyzedFileName =
+    stringValue(data.fileName) ||
+    stringValue(data.file_name) ||
+    stringValue(data.filename) ||
+    stringValue(fileName);
+  const hasAnalyzedFile = Boolean(analyzedFileName);
+  const analyzedFileLabel = hasAnalyzedFile ? analyzedFileName : "current file";
+  const normalizedFileName = analyzedFileName.toLowerCase();
+  const analyzedBasename = normalizedFileName.split(/[\\/]/).pop() || normalizedFileName;
+  const analyzedExtensionIndex = analyzedBasename.lastIndexOf(".");
+  const analyzedExtension = analyzedExtensionIndex === -1 ? "" : analyzedBasename.slice(analyzedExtensionIndex);
+  const isUnsupportedAnalyzeFile = hasAnalyzedFile && !isDockerfileLike(analyzedBasename, analyzedExtension);
+
+  const explicitReportUrl =
+    stringValue(data.reportUrl) ||
+    stringValue(data.report_url) ||
+    stringValue(reportContract.report_url) ||
+    stringValue(reportContract.full_report_url);
+  const fullReportUrl = explicitReportUrl ? escapeHtml(explicitReportUrl) : "";
+  const errorMessage =
+    stringValue(payload?.error) ||
+    stringValue(payload?.details) ||
+    stringValue(data.error) ||
+    stringValue(data.details);
+
+  const hasExtraQuickActions = quickActions.length > 3;
+  const quickActionsHtml = `
+        <div class="v2-section v2-collapsible" data-collapse-id="quick-actions" data-collapsed="true">
+          <div class="v2-section-header">
+            <div class="v2-section-title">Quick Actions</div>
+            ${hasExtraQuickActions
+              ? `<div class="v2-section-actions">
+                  <button class="v2-collapse-btn" type="button" data-toggle-collapse="quick-actions" data-disable-on-loading="1" aria-expanded="false">Show All</button>
+                </div>`
+              : ""}
+          </div>
+          ${quickActions.length
+            ? `<div class="v2-list">
+                ${quickActions
+                  .map(
+                    (action, index) => `
+                      <div class="v2-list-item v2-collapsible-item${index >= 3 ? " is-extra" : ""}">
+                        <span class="v2-list-index">${index + 1}</span>
+                        <span class="v2-list-text">${escapeHtml(action)}</span>
+                        <button class="v2-copy-btn" type="button" data-copy-text="${escapeHtml(action)}" data-disable-on-loading="1">Copy</button>
+                      </div>
+                    `,
+                  )
+                  .join("")}
+              </div>`
+            : `<div class="v2-empty-state">No quick actions were returned for this scan.</div>`}
+        </div>
+  `;
+
+  const hasExtraFindings = topFindings.length > 3;
+  const findingsEmptyMessage = numericTotalFindings > 0
+    ? "Findings were counted, but no detailed finding rows were returned in this response."
+    : "No findings were returned for this scan.";
+  const findingsHtml = `
+        <div class="v2-section v2-collapsible" data-collapse-id="top-findings" data-collapsed="true">
+          <div class="v2-section-header">
+            <div class="v2-section-title">Top Findings</div>
+            ${hasExtraFindings
+              ? `<div class="v2-section-actions">
+                  <button class="v2-collapse-btn" type="button" data-toggle-collapse="top-findings" data-disable-on-loading="1" aria-expanded="false">Show All</button>
+                </div>`
+              : ""}
+          </div>
+          ${topFindings.length
+            ? `<div class="v2-findings-note">
+                Showing ${Math.min(topFindings.length, 3)} of ${topFindings.length} findings. Open the full report for the complete breakdown.
+              </div>
+              <div class="v2-findings">
+                ${topFindings
+                  .map((issue, index) => {
+                    const severity = String(issue.severity || "INFO").toUpperCase();
+                    const severityClass = severity.toLowerCase().replace(/[^a-z0-9_-]/g, "") || "info";
+                    const title = escapeHtml(issue.message || issue.description || "Untitled finding");
+                    const description = escapeHtml(issue.description || "");
+
+                    return `
+                      <div class="v2-finding-card v2-collapsible-item${index >= 3 ? " is-extra" : ""}">
+                        <div class="v2-finding-severity v2-severity-${severityClass}">
+                          ${escapeHtml(severity)}
+                        </div>
+                        <div class="v2-finding-title">${title}</div>
+                        ${
+                          description && description !== title
+                            ? `<div class="v2-finding-desc">${description}</div>`
+                            : ""
+                        }
+                      </div>
+                    `;
+                  })
+                  .join("")}
+              </div>`
+            : `<div class="v2-empty-state">${escapeHtml(findingsEmptyMessage)}</div>`}
+        </div>
+  `;
+
+  const detailsHtml = `
+        <details class="v2-details">
+          <summary>Technical Details</summary>
+          <div class="v2-details-grid">
+            <div class="v2-detail-card">
+              <div class="v2-detail-label">Total Findings</div>
+              <div class="v2-detail-value">${escapeHtml(totalFindings)}</div>
+            </div>
+            <div class="v2-detail-card">
+              <div class="v2-detail-label">Severity</div>
+              <div class="v2-detail-value">
+                Critical ${escapeHtml(criticalCount)} &middot; High ${escapeHtml(highCount)} &middot; Medium ${escapeHtml(mediumCount)} &middot; Low ${escapeHtml(lowCount)}
+              </div>
+            </div>
+          </div>
+        </details>
+  `;
+
+  const fileStateHtml = !hasAnalyzedFile
+    ? `<div class="v2-empty-state">No file is associated with this analysis. Open a Dockerfile and retry the scan.</div>`
+    : isUnsupportedAnalyzeFile
+      ? `<div class="v2-empty-state">This file type is not supported for Dockerfile Analysis. Open a Dockerfile or *.dockerfile file and retry.</div>`
+      : "";
+
+  const loadingHtml = `
+        <div class="v2-loading-state" data-loading-state hidden>
+          <span class="v2-loading-dot"></span>
+          <span data-loading-label>Analyzing Dockerfile...</span>
+        </div>
+  `;
+
+  const errorHtml = errorMessage
+    ? `
+        <div class="v2-error-state">
+          <div class="v2-error-title">Analysis Error</div>
+          <div class="v2-error-copy">${escapeHtml(errorMessage)}</div>
+          <div class="v2-error-actions">
+            <button class="v2-secondary-btn" type="button" data-retry-analysis="1" data-disable-on-loading="1">Retry</button>
+            ${webAppUrl
+              ? `<button class="shieldops-btn v2-secondary-btn" type="button" data-open-report="${webAppUrl}" data-disable-on-loading="1">Open Platform</button>`
+              : ""}
+          </div>
+        </div>
+    `
+    : "";
+
+  const fullReportHtml = `
+        <div class="v2-section v2-full-report">
+          <div class="v2-section-title">Full Report</div>
+          ${fullReportUrl
+            ? `<div class="v2-actions">
+                <button class="shieldops-btn shieldops-btn-primary" type="button" data-open-report="${fullReportUrl}" data-disable-on-loading="1">
+                  Open Full Report
+                </button>
+              </div>`
+            : `<div class="v2-empty-state">No report URL was returned for this scan.</div>`}
+        </div>
+  `;
+
+  return `
+        <section class="shieldops-v2">
+          <div class="shieldops-v2-badge">SHIELDOPS AI</div>
+
+          <h1 class="shieldops-v2-title">Dockerfile Analysis</h1>
+
+          <div class="shieldops-v2-subtitle">
+            Analysis completed for ${escapeHtml(analyzedFileLabel)}.
+          </div>
+
+          ${loadingHtml}
+          ${fileStateHtml}
+
+          <div class="v2-hero">
+            <div class="v2-metric">
+              <div class="v2-metric-label">Security</div>
+              <div class="v2-metric-value">${escapeHtml(securityPercent)} <span>(${escapeHtml(securityGrade)})</span></div>
+            </div>
+            <div class="v2-metric">
+              <div class="v2-metric-label">Readiness</div>
+              <div class="v2-metric-value">${escapeHtml(readinessPercent)} <span>(${escapeHtml(readinessGrade)})</span></div>
+            </div>
+          </div>
+
+          <div class="v2-decision ${riskClass}">
+            <div class="v2-section-title">Risk Decision</div>
+            <div class="v2-decision-label">${escapeHtml(riskLabel)}</div>
+            <div class="v2-decision-text">${escapeHtml(decisionText)}</div>
+          </div>
+
+          ${errorHtml}
+          ${findingsHtml}
+          ${quickActionsHtml}
+          ${detailsHtml}
+          ${fullReportHtml}
+        </section>
+  `;
+}
+
+function renderAnalyzeSectionV1(viewData: AnalyzeViewData): string {
+  const { result, findings, webAppUrl } = viewData;
   const data = asRecord(result);
   const contract = getReportContract(data);
   const v2Stats = getV2ScanStats(data);
@@ -1189,6 +2144,15 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function getNonce(): string {
+  const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let text = "";
+  for (let i = 0; i < 32; i += 1) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }
 
 function getSidebarHtml(): string {
