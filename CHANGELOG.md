@@ -6,6 +6,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-04-19
+
+- Fixed Security Score and Production Readiness being swapped in the compact view and report view.
+- Introduced canonical score normalization (`normalize_report_scores`) to eliminate ambiguous field bindings.
+- Extension `report_contract` now includes explicit `security_score_percent`, `security_score_grade`, `production_readiness_percent`, and `production_readiness_grade` fields.
+
 ## [2.0.4] - 2026-04-19
 
 - Aligned Dockerfile report score rendering with the platform contract.
