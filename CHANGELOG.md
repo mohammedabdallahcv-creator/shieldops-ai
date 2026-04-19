@@ -6,6 +6,16 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-04-19
+
+- Enriched the Dockerfile analysis result panel with structured report data from the platform.
+- Added **Risk & Decision** section showing risk level, deployment recommendation, and decision tier.
+- Added **Analysis Summary** section with rules checked, passed/failed counts, auto-fixable, and category breakdown.
+- Added **Quick Actions** section with translated top-priority action items.
+- Security Score and Production Readiness now display their letter grades (e.g. 39% — Grade F).
+- Findings now prefer `report_contract.detailed_issues` over raw extraction for consistency with the web report.
+- Readiness score in compact stat cards now shows its grade alongside the percentage.
+
 ## [2.0.5] - 2026-04-19
 
 - Fixed Security Score and Production Readiness being swapped in the compact view and report view.

@@ -23,12 +23,21 @@ type ExtensionApiResponse = {
 
 type ReportContract = {
   securityScore?: string;
+  securityScoreGrade?: string;
   readinessScore?: string;
+  readinessGrade?: string;
   totalIssues?: string;
   criticalCount?: string;
   highCount?: string;
   mediumCount?: string;
   lowCount?: string;
+  detailedIssues?: FindingRow[];
+  summary?: Record<string, unknown>;
+  decisionContract?: Record<string, unknown>;
+  executiveSignal?: Record<string, unknown>;
+  quickActions?: string[];
+  riskPosture?: Record<string, unknown>;
+  stats?: Record<string, unknown>;
 };
 
 type FindingRow = {
@@ -638,19 +647,20 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
       formatPercent(data.score) ||
       formatPercent(v2Stats.score) ||
       formatPercent((data.stats as Record<string, unknown> | undefined)?.score);
-    const grade = stringValue(v2Stats.grade);
+    const secGrade = contract.securityScoreGrade || stringValue(v2Stats.grade);
     const readiness =
-      formatPercent(scoreV3.score) ||
       contract.readinessScore ||
+      formatPercent(scoreV3.score) ||
       formatPercent(data.readiness_score) ||
       formatPercent(v2Stats.score) ||
       stringValue(v2Stats.readiness);
+    const readGrade = contract.readinessGrade || "";
     const engine = displayEngineName(stringValue(data.engine));
     const scanId = stringValue(data.scan_id);
 
     stats.push({ label: "Findings", value: totalFindings });
-    if (score) stats.push({ label: "Security Score", value: grade ? `${score} (${grade})` : score });
-    if (readiness) stats.push({ label: "Readiness", value: readiness });
+    if (score) stats.push({ label: "Security Score", value: secGrade ? `${score} (${secGrade})` : score });
+    if (readiness) stats.push({ label: "Readiness", value: readGrade ? `${readiness} (${readGrade})` : readiness });
     if (engine) stats.push({ label: "Engine", value: engine });
     if (scanId) stats.push({ label: "Scan ID", value: scanId });
   }
@@ -692,40 +702,94 @@ function renderAnalyzeSection(
   const data = asRecord(result);
   const contract = getReportContract(data);
   const v2Stats = getV2ScanStats(data);
-  const summary = asRecord(data.summary);
-  const analysisV2 = asRecord(data.analysis_v2);
-  const decisionSummary = asRecord(analysisV2.decision_summary);
-  const scoreV3 = asRecord(analysisV2.score_v3);
+
+  // ── Scores (prefer contract canonical fields) ──
   const score =
     contract.securityScore ||
     formatPercent(data.security_score) ||
-    formatPercent(decisionSummary.score) ||
     formatPercent(data.score) ||
     formatPercent(v2Stats.score) ||
-    "Not available";
-  const grade = stringValue(v2Stats.grade) || "N/A";
+    "N/A";
+  const secGrade = contract.securityScoreGrade || stringValue(v2Stats.grade) || "N/A";
   const readiness =
-    formatPercent(scoreV3.score) ||
     contract.readinessScore ||
     formatPercent(data.readiness_score) ||
     formatPercent(v2Stats.score) ||
-    stringValue(v2Stats.readiness) ||
-    "Not available";
-  const engine = displayEngineName(stringValue(asRecord(result).engine));
-  const declaredFindings = Number(
-    contract.totalIssues ||
-      stringValue(v2Stats.issues_found) ||
-      stringValue(data.issues_count) ||
-      stringValue(summary.total_issues) ||
-      String(findings.length),
-  );
+    "N/A";
+  const readGrade = contract.readinessGrade || "";
+  const engine = displayEngineName(stringValue(data.engine));
+
+  // ── Findings (prefer contract detailed_issues) ──
+  const displayFindings =
+    contract.detailedIssues && contract.detailedIssues.length > 0
+      ? contract.detailedIssues
+      : findings;
+  const declaredFindings = Number(contract.totalIssues || String(displayFindings.length));
+
   const severityLine = [
     contract.criticalCount ? `Critical ${contract.criticalCount}` : "",
     contract.highCount ? `High ${contract.highCount}` : "",
     contract.mediumCount ? `Medium ${contract.mediumCount}` : "",
     contract.lowCount ? `Low ${contract.lowCount}` : "",
   ].filter(Boolean).join(" · ");
-  const topFindings = [...findings]
+
+  // ── Decision / Risk Signal ──
+  const dc = contract.decisionContract;
+  const es = contract.executiveSignal;
+  const rp = contract.riskPosture;
+  let decisionSection = "";
+  if (dc && (stringValue(dc.risk_level) || stringValue(dc.decision))) {
+    const tier = stringValue(dc.tier);
+    const accent = stringValue(rp?.accent) || (tier === "good" ? "#00ff88" : tier === "warning" ? "#ff9500" : "#ff3366");
+    decisionSection = `
+    <div class="section" style="border-left: 3px solid ${accent};">
+      <h2 class="section-title">Risk &amp; Decision</h2>
+      <div class="stack">
+        <div class="stack-card"><strong>Risk Level</strong><span style="color:${accent}">${escapeHtml(stringValue(dc.risk_label) || stringValue(dc.risk_level) || "Unknown")}</span></div>
+        <div class="stack-card"><strong>Decision</strong><span>${escapeHtml(stringValue(dc.decision_text) || stringValue(dc.decision) || "Review Required")}</span></div>
+        ${es ? `<div class="stack-card"><strong>Deployment</strong><span>${escapeHtml(stringValue(es.deployment_value) || "N/A")}</span></div>` : ""}
+      </div>
+    </div>`;
+  }
+
+  // ── Analysis Summary breakdown ──
+  const sm = contract.summary;
+  let summarySection = "";
+  if (sm) {
+    const totalRules = stringValue(sm.total_rules) || "0";
+    const passed = stringValue(sm.passed_rules_count) || "0";
+    const failed = stringValue(sm.failed_rules_count) || "0";
+    const autoFixable = stringValue(sm.auto_fixable_count) || "0";
+    const secCount = stringValue(sm.security_count) || "0";
+    const effCount = stringValue(sm.efficiency_count) || "0";
+    const bpCount = stringValue(sm.best_practices_count) || "0";
+
+    summarySection = `
+    <div class="section">
+      <h2 class="section-title">Analysis Summary</h2>
+      <div class="stack">
+        <div class="stack-card"><strong>Rules Checked</strong><span>${escapeHtml(totalRules)} (${escapeHtml(passed)} passed · ${escapeHtml(failed)} failed)</span></div>
+        <div class="stack-card"><strong>Auto-Fixable</strong><span>${escapeHtml(autoFixable)}</span></div>
+        <div class="stack-card"><strong>By Category</strong><span>Security ${escapeHtml(secCount)} · Efficiency ${escapeHtml(effCount)} · Best Practices ${escapeHtml(bpCount)}</span></div>
+      </div>
+    </div>`;
+  }
+
+  // ── Quick Actions ──
+  const qa = contract.quickActions;
+  let quickActionsSection = "";
+  if (qa && qa.length > 0) {
+    quickActionsSection = `
+    <div class="section">
+      <h2 class="section-title">Quick Actions</h2>
+      <div class="pill-row">
+        ${qa.map((a) => `<span class="pill">⚡ ${escapeHtml(a)}</span>`).join("")}
+      </div>
+    </div>`;
+  }
+
+  // ── Top Findings ──
+  const topFindings = [...displayFindings]
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
     .slice(0, 5);
   if (topFindings.length === 0 && declaredFindings > 0) {
@@ -734,26 +798,24 @@ function renderAnalyzeSection(
       message: "Issues were detected. Open the full web report for the complete breakdown.",
     });
   }
-  const findingsMarkup = topFindings.map((item) => {
-    const severity = String(item.severity || "INFO").toUpperCase();
-    const icon = severity === "CRITICAL" || severity === "HIGH" ? "ðŸ”´" : severity === "MEDIUM" ? "ðŸŸ " : "ðŸŸ¡";
-    return `<div class="stack-card"><strong>${icon} [${escapeHtml(severity)}]</strong><span>${escapeHtml(item.message || item.description || "Untitled finding")}</span></div>`;
-  }).join("");
   const fallbackMarkup = declaredFindings > 0
     ? `<div class="empty">Issues were detected. Open the full web report for the complete breakdown.</div>`
     : `<div class="empty">No issues found.</div>`;
 
   return `
+    ${decisionSection}
     <div class="section">
       <h2 class="section-title">Dockerfile Report Summary</h2>
       <div class="stack">
-        <div class="stack-card"><strong>Security Score</strong><span>${escapeHtml(score)} - Grade ${escapeHtml(grade)}</span></div>
-        <div class="stack-card"><strong>Production Readiness</strong><span>${escapeHtml(readiness)}</span></div>
+        <div class="stack-card"><strong>Security Score</strong><span>${escapeHtml(score)} — Grade ${escapeHtml(secGrade)}</span></div>
+        <div class="stack-card"><strong>Production Readiness</strong><span>${escapeHtml(readiness)}${readGrade ? ` — Grade ${escapeHtml(readGrade)}` : ""}</span></div>
         <div class="stack-card"><strong>Engine</strong><span>${escapeHtml(engine)}</span></div>
         <div class="stack-card"><strong>Total Findings</strong><span>${escapeHtml(String(declaredFindings))}</span></div>
         ${severityLine ? `<div class="stack-card"><strong>Severity</strong><span>${escapeHtml(severityLine)}</span></div>` : ""}
       </div>
     </div>
+    ${summarySection}
+    ${quickActionsSection}
     <div class="section">
       <h2 class="section-title">Top Findings</h2>
       <p class="section-copy">The panel keeps the top 5 findings in view. Open the full report for the complete breakdown.</p>
@@ -976,14 +1038,47 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function getReportContract(data: Record<string, unknown>): ReportContract {
   const contract = asRecord(data.report_contract);
+  const summaryRaw = asRecord(contract.summary);
+  const decisionRaw = asRecord(contract.decision_contract);
+  const executiveRaw = asRecord(contract.executive_signal);
+  const riskRaw = asRecord(contract.risk_posture);
+  const statsRaw = asRecord(contract.stats);
+
+  const rawIssues = Array.isArray(contract.detailed_issues) ? contract.detailed_issues : [];
+  const detailedIssues: FindingRow[] = rawIssues
+    .map((item: unknown) => {
+      const row = asRecord(item);
+      return {
+        ruleId: stringValue(row.rule_id),
+        severity: String(row.severity || "INFO").toUpperCase(),
+        line: normalizeLine(row.line),
+        message: stringValue(row.title) || stringValue(row.description),
+        description: stringValue(row.description),
+      };
+    })
+    .filter((item: FindingRow) => item.message || item.description);
+
+  const rawQuickActions = Array.isArray(contract.quick_actions) ? contract.quick_actions : [];
+
   return {
     securityScore: formatPercent(contract.security_score),
+    securityScoreGrade: stringValue(contract.security_score_grade),
     readinessScore: formatPercent(contract.readiness_score),
+    readinessGrade: stringValue(contract.production_readiness_grade),
     totalIssues: stringValue(contract.total_issues),
     criticalCount: stringValue(contract.critical_count),
     highCount: stringValue(contract.high_count),
     mediumCount: stringValue(contract.medium_count),
     lowCount: stringValue(contract.low_count),
+    detailedIssues: detailedIssues.length ? detailedIssues : undefined,
+    summary: Object.keys(summaryRaw).length ? summaryRaw : undefined,
+    decisionContract: Object.keys(decisionRaw).length ? decisionRaw : undefined,
+    executiveSignal: Object.keys(executiveRaw).length ? executiveRaw : undefined,
+    quickActions: rawQuickActions.length
+      ? rawQuickActions.map((a: unknown) => String(a || "")).filter(Boolean)
+      : undefined,
+    riskPosture: Object.keys(riskRaw).length ? riskRaw : undefined,
+    stats: Object.keys(statsRaw).length ? statsRaw : undefined,
   };
 }
 
