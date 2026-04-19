@@ -624,6 +624,7 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
     const summary = asRecord(data.summary);
     const analysisV2 = asRecord(data.analysis_v2);
     const decisionSummary = asRecord(analysisV2.decision_summary);
+    const scoreV3 = asRecord(analysisV2.score_v3);
     const totalFindings =
       contract.totalIssues ||
       stringValue(v2Stats.issues_found) ||
@@ -632,16 +633,17 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
       String(findingsCount);
     const score =
       contract.securityScore ||
-      stringValue(data.security_score) ||
-      stringValue(decisionSummary.score) ||
-      stringValue(data.score) ||
-      stringValue(v2Stats.score) ||
-      stringValue((data.stats as Record<string, unknown> | undefined)?.score);
+      formatPercent(data.security_score) ||
+      formatPercent(decisionSummary.score) ||
+      formatPercent(data.score) ||
+      formatPercent(v2Stats.score) ||
+      formatPercent((data.stats as Record<string, unknown> | undefined)?.score);
     const grade = stringValue(v2Stats.grade);
     const readiness =
+      formatPercent(scoreV3.score) ||
       contract.readinessScore ||
-      stringValue(data.readiness_score) ||
-      stringValue(v2Stats.score) ||
+      formatPercent(data.readiness_score) ||
+      formatPercent(v2Stats.score) ||
       stringValue(v2Stats.readiness);
     const engine = displayEngineName(stringValue(data.engine));
     const scanId = stringValue(data.scan_id);
@@ -693,18 +695,20 @@ function renderAnalyzeSection(
   const summary = asRecord(data.summary);
   const analysisV2 = asRecord(data.analysis_v2);
   const decisionSummary = asRecord(analysisV2.decision_summary);
+  const scoreV3 = asRecord(analysisV2.score_v3);
   const score =
     contract.securityScore ||
-    stringValue(data.security_score) ||
-    stringValue(decisionSummary.score) ||
-    stringValue(data.score) ||
-    stringValue(v2Stats.score) ||
+    formatPercent(data.security_score) ||
+    formatPercent(decisionSummary.score) ||
+    formatPercent(data.score) ||
+    formatPercent(v2Stats.score) ||
     "Not available";
   const grade = stringValue(v2Stats.grade) || "N/A";
   const readiness =
+    formatPercent(scoreV3.score) ||
     contract.readinessScore ||
-    stringValue(data.readiness_score) ||
-    stringValue(v2Stats.score) ||
+    formatPercent(data.readiness_score) ||
+    formatPercent(v2Stats.score) ||
     stringValue(v2Stats.readiness) ||
     "Not available";
   const engine = displayEngineName(stringValue(asRecord(result).engine));
@@ -1006,7 +1010,12 @@ function formatPercent(value: unknown): string {
   if (!raw) {
     return "";
   }
-  return raw.endsWith("%") ? raw : `${raw}%`;
+  const normalized = raw.endsWith("%") ? raw.slice(0, -1) : raw;
+  const numeric = Number(normalized.trim());
+  if (!Number.isFinite(numeric)) {
+    return "";
+  }
+  return `${Math.round(numeric)}%`;
 }
 
 function normalizeLine(value: unknown): string | number | undefined {

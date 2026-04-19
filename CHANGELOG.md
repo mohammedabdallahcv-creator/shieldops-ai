@@ -6,6 +6,12 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-04-19
+
+- Aligned Dockerfile report score rendering with the platform contract.
+- Production Readiness now prefers `analysis_v2.score_v3.score` and falls back safely.
+- Security Score now renders numeric score fields as rounded percentages without treating text readiness labels as percentages.
+
 ## [2.0.1] - 2026-04-18
 
 - Preserved the backend-provided report route so VS Code report links keep the extension origin context.

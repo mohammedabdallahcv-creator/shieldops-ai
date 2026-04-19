@@ -2,7 +2,7 @@
   "name": "shieldops-ai",
   "displayName": "ShieldOps AI",
   "description": "Security scanner for Docker, Kubernetes, Compose, SBOM, and AutoFix workflows.",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "publisher": "mohammedabdallahcv",
   "icon": "images/icon.png",
   "license": "MIT",
