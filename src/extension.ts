@@ -21,6 +21,16 @@ type ExtensionApiResponse = {
   details?: string;
 };
 
+type ReportContract = {
+  securityScore?: string;
+  readinessScore?: string;
+  totalIssues?: string;
+  criticalCount?: string;
+  highCount?: string;
+  mediumCount?: string;
+  lowCount?: string;
+};
+
 type FindingRow = {
   ruleId?: string;
   severity?: string;
@@ -609,24 +619,29 @@ function extractStats(result: unknown, findingsCount: number): Array<{ label: st
 
   if (result && typeof result === "object") {
     const data = result as Record<string, unknown>;
+    const contract = getReportContract(data);
     const v2Stats = getV2ScanStats(data);
     const summary = asRecord(data.summary);
     const analysisV2 = asRecord(data.analysis_v2);
     const decisionSummary = asRecord(analysisV2.decision_summary);
     const totalFindings =
+      contract.totalIssues ||
       stringValue(v2Stats.issues_found) ||
       stringValue(data.issues_count) ||
       stringValue(summary.total_issues) ||
       String(findingsCount);
     const score =
+      contract.securityScore ||
       stringValue(data.security_score) ||
-      stringValue(v2Stats.score) ||
+      stringValue(decisionSummary.score) ||
       stringValue(data.score) ||
+      stringValue(v2Stats.score) ||
       stringValue((data.stats as Record<string, unknown> | undefined)?.score);
     const grade = stringValue(v2Stats.grade);
     const readiness =
+      contract.readinessScore ||
       stringValue(data.readiness_score) ||
-      stringValue(decisionSummary.score) ||
+      stringValue(v2Stats.score) ||
       stringValue(v2Stats.readiness);
     const engine = displayEngineName(stringValue(data.engine));
     const scanId = stringValue(data.scan_id);
@@ -673,20 +688,39 @@ function renderAnalyzeSection(
   webAppUrl: string,
 ): string {
   const data = asRecord(result);
+  const contract = getReportContract(data);
   const v2Stats = getV2ScanStats(data);
   const summary = asRecord(data.summary);
   const analysisV2 = asRecord(data.analysis_v2);
   const decisionSummary = asRecord(analysisV2.decision_summary);
-  const score = stringValue(data.security_score) || stringValue(v2Stats.score) || stringValue(data.score) || "Not available";
+  const score =
+    contract.securityScore ||
+    stringValue(data.security_score) ||
+    stringValue(decisionSummary.score) ||
+    stringValue(data.score) ||
+    stringValue(v2Stats.score) ||
+    "Not available";
   const grade = stringValue(v2Stats.grade) || "N/A";
-  const readiness = stringValue(data.readiness_score) || stringValue(decisionSummary.score) || stringValue(v2Stats.readiness) || "Not available";
+  const readiness =
+    contract.readinessScore ||
+    stringValue(data.readiness_score) ||
+    stringValue(v2Stats.score) ||
+    stringValue(v2Stats.readiness) ||
+    "Not available";
   const engine = displayEngineName(stringValue(asRecord(result).engine));
   const declaredFindings = Number(
-    stringValue(v2Stats.issues_found) ||
+    contract.totalIssues ||
+      stringValue(v2Stats.issues_found) ||
       stringValue(data.issues_count) ||
       stringValue(summary.total_issues) ||
       String(findings.length),
   );
+  const severityLine = [
+    contract.criticalCount ? `Critical ${contract.criticalCount}` : "",
+    contract.highCount ? `High ${contract.highCount}` : "",
+    contract.mediumCount ? `Medium ${contract.mediumCount}` : "",
+    contract.lowCount ? `Low ${contract.lowCount}` : "",
+  ].filter(Boolean).join(" · ");
   const topFindings = [...findings]
     .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
     .slice(0, 5);
@@ -713,6 +747,7 @@ function renderAnalyzeSection(
         <div class="stack-card"><strong>Production Readiness</strong><span>${escapeHtml(readiness)}</span></div>
         <div class="stack-card"><strong>Engine</strong><span>${escapeHtml(engine)}</span></div>
         <div class="stack-card"><strong>Total Findings</strong><span>${escapeHtml(String(declaredFindings))}</span></div>
+        ${severityLine ? `<div class="stack-card"><strong>Severity</strong><span>${escapeHtml(severityLine)}</span></div>` : ""}
       </div>
     </div>
     <div class="section">
@@ -935,6 +970,19 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
+function getReportContract(data: Record<string, unknown>): ReportContract {
+  const contract = asRecord(data.report_contract);
+  return {
+    securityScore: formatPercent(contract.security_score),
+    readinessScore: formatPercent(contract.readiness_score),
+    totalIssues: stringValue(contract.total_issues),
+    criticalCount: stringValue(contract.critical_count),
+    highCount: stringValue(contract.high_count),
+    mediumCount: stringValue(contract.medium_count),
+    lowCount: stringValue(contract.low_count),
+  };
+}
+
 function getV2ScanStats(data: Record<string, unknown>): Record<string, unknown> {
   return asRecord(asRecord(data.v2_scan).stats);
 }
@@ -951,6 +999,14 @@ function stringValue(value: unknown): string {
     return String(value);
   }
   return "";
+}
+
+function formatPercent(value: unknown): string {
+  const raw = stringValue(value);
+  if (!raw) {
+    return "";
+  }
+  return raw.endsWith("%") ? raw : `${raw}%`;
 }
 
 function normalizeLine(value: unknown): string | number | undefined {
