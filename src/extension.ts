@@ -725,7 +725,14 @@ function renderResultPanelScript(nonce: string): string {
             const printBtn = target.closest("[data-print-report]");
             if (printBtn) {
               event.preventDefault();
-              window.print();
+              if (loading) {
+                return;
+              }
+              setLoading(true, "Preparing print view...");
+              if (vscode) {
+                vscode.postMessage({ command: "printReport" });
+              }
+              window.setTimeout(() => setLoading(false), 1500);
               return;
             }
           });
@@ -1022,6 +1029,15 @@ async function showResultPanel(
         await vscode.workspace.fs.writeFile(uri, Buffer.from(json, "utf-8"));
         vscode.window.showInformationMessage(`SBOM exported to ${vscode.workspace.asRelativePath(uri)}`);
       }
+      return;
+    }
+    if (command === "printReport" && task === "sbom" && payload.result) {
+      const html = buildSbomPrintHtml(payload.result, fileName);
+      const tmpDir = context.globalStorageUri;
+      await vscode.workspace.fs.createDirectory(tmpDir);
+      const tmpFile = vscode.Uri.joinPath(tmpDir, "sbom-report.html");
+      await vscode.workspace.fs.writeFile(tmpFile, Buffer.from(html, "utf-8"));
+      await vscode.env.openExternal(tmpFile);
       return;
     }
   });
@@ -2707,6 +2723,100 @@ function buildCycloneDxJson(result: unknown): string {
   };
 
   return JSON.stringify(document, null, 2);
+}
+
+function buildSbomPrintHtml(result: unknown, fileName: string): string {
+  const data = asRecord(result);
+  const summary = asRecord(data.summary);
+  const metadata = asRecord(data.metadata);
+  const components = Array.isArray(data.components) ? data.components : [];
+  const riskSignal = (stringValue(data.risk_signal) || stringValue(summary.risk_signal) || "N/A").toUpperCase();
+  const confidence = stringValue(summary.confidence) || "—";
+  const totalComponents = stringValue(summary.total_components) || String(components.length);
+  const vulnCount = stringValue(summary.vulnerability_count) || "0";
+  const licenseReview = stringValue(summary.license_review_count) || "0";
+  const engine = stringValue(summary.engine) || stringValue(data.engine) || "sbom-lite";
+  const timestamp = stringValue(metadata.timestamp) || new Date().toISOString();
+  const sourceFile = escapeHtml(stringValue(metadata.source_file) || fileName || "—");
+
+  const compRows = components.map((item: unknown) => {
+    const row = asRecord(item);
+    const name = escapeHtml(stringValue(row.name) || "—");
+    const version = escapeHtml(stringValue(row.version) || "—");
+    const type = escapeHtml(stringValue(row.type) || "library");
+    const license = escapeHtml(stringValue(row.license) || "—");
+    const flags: string[] = [];
+    if (row.vulnerable) { flags.push("VULN"); }
+    if (row.disallowed) { flags.push("BLOCKED"); }
+    return `<tr><td>${name}</td><td>${version}</td><td>${type}</td><td>${license}</td><td>${flags.join(", ")}</td></tr>`;
+  }).join("");
+
+  const quickActions = (Array.isArray(data.quick_actions) ? data.quick_actions : [])
+    .map((item: unknown) => {
+      const row = asRecord(item);
+      const label = escapeHtml(stringValue(row.label) || stringValue(row.type) || "");
+      const desc = escapeHtml(stringValue(row.description) || "");
+      return label ? `<li><strong>${label}</strong>${desc ? ` — ${desc}` : ""}</li>` : "";
+    })
+    .filter(Boolean)
+    .join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>ShieldOps AI — SBOM Report</title>
+  <style>
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+    body { margin: 0; padding: 32px; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; color: #1a1a2e; background: #fff; line-height: 1.6; }
+    .header { border-bottom: 3px solid #7c3aed; padding-bottom: 16px; margin-bottom: 24px; }
+    .header h1 { margin: 0; font-size: 22px; color: #7c3aed; }
+    .header p { margin: 4px 0 0; color: #666; font-size: 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .card { padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .card .label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #888; text-transform: uppercase; margin-bottom: 4px; }
+    .card .value { font-size: 20px; font-weight: 700; color: #1a1a2e; }
+    h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #7c3aed; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin: 24px 0 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #888; text-transform: uppercase; padding: 6px 8px; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+    tr:nth-child(even) td { background: #fafafa; }
+    .risk-badge { display: inline-block; padding: 4px 12px; border-radius: 4px; font-weight: 700; font-size: 13px; }
+    .risk-low { background: #ecfdf5; color: #065f46; }
+    .risk-medium { background: #fffbeb; color: #92400e; }
+    .risk-high, .risk-critical { background: #fef2f2; color: #991b1b; }
+    ul { padding-left: 20px; }
+    li { margin-bottom: 6px; font-size: 13px; }
+    .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #aaa; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>ShieldOps AI — SBOM Report</h1>
+    <p>Source: ${sourceFile} · Engine: ${escapeHtml(engine)} · Generated: ${escapeHtml(timestamp)}</p>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="label">Supply Chain Risk</div><div class="value"><span class="risk-badge risk-${riskSignal.toLowerCase()}">${escapeHtml(riskSignal)}</span></div></div>
+    <div class="card"><div class="label">Confidence</div><div class="value">${escapeHtml(confidence)}</div></div>
+    <div class="card"><div class="label">Components</div><div class="value">${escapeHtml(totalComponents)}</div></div>
+    <div class="card"><div class="label">Vulnerabilities</div><div class="value">${escapeHtml(vulnCount)}</div></div>
+    <div class="card"><div class="label">License Issues</div><div class="value">${escapeHtml(licenseReview)}</div></div>
+  </div>
+
+  <h2>Component Inventory (${components.length})</h2>
+  <table>
+    <thead><tr><th>Name</th><th>Version</th><th>Type</th><th>License</th><th>Flags</th></tr></thead>
+    <tbody>${compRows || "<tr><td colspan='5' style='text-align:center;color:#888'>No components detected</td></tr>"}</tbody>
+  </table>
+
+  ${quickActions ? `<h2>Recommended Actions</h2><ul>${quickActions}</ul>` : ""}
+
+  <div class="footer">
+    ShieldOps AI · CycloneDX 1.5 Lite · Use Ctrl+P / Cmd+P to save as PDF
+  </div>
+</body>
+</html>`;
 }
 
 export function deactivate() {}
