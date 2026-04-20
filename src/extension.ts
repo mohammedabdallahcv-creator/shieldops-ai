@@ -827,14 +827,30 @@ function registerTaskCommand(
 
       await showResultPanel(context, task, fileName, payload);
 
+      const toastActions: string[] = task === "sbom"
+        ? ["Export JSON"]
+        : ["Open in Web App"];
+
       const choice = await vscode.window.showInformationMessage(
         payload.summary || `ShieldOps AI completed ${TASK_LABELS[task]}.`,
-        "Open in Web App",
+        ...toastActions,
       );
 
       if (choice === "Open in Web App") {
-        let targetRoute = payload.route || TASK_ROUTE_MAP[task];
+        const targetRoute = payload.route || TASK_ROUTE_MAP[task];
         await openExternal(baseUrl, targetRoute);
+      } else if (choice === "Export JSON" && task === "sbom" && payload.result) {
+        const json = buildCycloneDxJson(payload.result);
+        const safeName = (fileName || "sbom").replace(/[^a-zA-Z0-9._-]/g, "_");
+        const uri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(`${safeName}.cdx.json`),
+          filters: { "CycloneDX JSON": ["json"], "All files": ["*"] },
+          title: "Export SBOM — CycloneDX 1.5",
+        });
+        if (uri) {
+          await vscode.workspace.fs.writeFile(uri, Buffer.from(json, "utf-8"));
+          vscode.window.showInformationMessage(`SBOM exported to ${vscode.workspace.asRelativePath(uri)}`);
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || "Unknown error");
