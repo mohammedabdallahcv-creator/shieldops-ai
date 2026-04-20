@@ -6,6 +6,14 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-04-20
+
+- Added **Export SBOM JSON** button — saves a CycloneDX 1.5 compliant `.cdx.json` file via VS Code save dialog.
+- Added **Print / Save PDF** button — opens the browser print dialog for PDF export.
+- Added **Component Inventory** table showing name, version, type, license, and risk badges (VULN/BLOCKED) with collapsible Show All for large inventories.
+- Removed the non-functional "Open Full Report" link from the SBOM panel.
+- Export section now shows format compatibility note (Dependency-Track, Grype, OWASP tools).
+
 ## [2.1.0] - 2026-04-19
 
 - Enriched the Dockerfile analysis result panel with structured report data from the platform.

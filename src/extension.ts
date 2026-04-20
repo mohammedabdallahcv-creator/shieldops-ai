@@ -705,6 +705,28 @@ function renderResultPanelScript(nonce: string): string {
               if (vscode) {
                 vscode.postMessage({ command: "retryAnalysis" });
               }
+              return;
+            }
+
+            const exportSbomBtn = target.closest("[data-export-sbom-json]");
+            if (exportSbomBtn) {
+              event.preventDefault();
+              if (loading) {
+                return;
+              }
+              setLoading(true, "Exporting SBOM JSON...");
+              if (vscode) {
+                vscode.postMessage({ command: "exportSbomJson" });
+              }
+              window.setTimeout(() => setLoading(false), 1200);
+              return;
+            }
+
+            const printBtn = target.closest("[data-print-report]");
+            if (printBtn) {
+              event.preventDefault();
+              window.print();
+              return;
             }
           });
         })();
@@ -970,6 +992,21 @@ async function showResultPanel(
     }
     if (command === "retryAnalysis" && task === "analyze") {
       await vscode.commands.executeCommand("shieldops-ai.analyzeCurrentFile");
+      return;
+    }
+    if (command === "exportSbomJson" && task === "sbom" && payload.result) {
+      const json = buildCycloneDxJson(payload.result);
+      const safeName = (fileName || "sbom").replace(/[^a-zA-Z0-9._-]/g, "_");
+      const uri = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(`${safeName}.cdx.json`),
+        filters: { "CycloneDX JSON": ["json"], "All files": ["*"] },
+        title: "Export SBOM — CycloneDX 1.5",
+      });
+      if (uri) {
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(json, "utf-8"));
+        vscode.window.showInformationMessage(`SBOM exported to ${vscode.workspace.asRelativePath(uri)}`);
+      }
+      return;
     }
   });
 
@@ -1827,40 +1864,265 @@ function renderAutofixSection(
   `;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DROP-IN REPLACEMENT for renderSbomSection() in src/extension.ts
+//
+// REPLACES lines 1830–1933 (the entire function, inclusive).
+//
+// Assumptions — all satisfied by the existing extension.ts:
+//   • Helper functions available: asRecord, stringValue, escapeHtml,
+//     severityColor, renderFindingsSection
+//   • CSS available: v2Styles const (v2-section, v2-metric, v2-hero,
+//     v2-finding-card, v2-collapsible, v2-list, v2-copy-btn, shieldops-btn,
+//     shieldops-btn-primary, pill, pill-row …)
+//   • JS available: renderResultPanelScript() handles data-copy-text,
+//     data-toggle-collapse, data-open-report automatically
+//   • API response fields from POST /api/ext/run { task:"sbom" }:
+//       data.summary.total_components / direct_deps / transitive_deps /
+//       vulnerability_count / vulnerable_component_count /
+//       license_review_count / disallowed_count / confidence / risk_signal
+//       data.risk_signal
+//       data.vulnerability_breakdown.{ critical, high, medium, low }
+//       data.licenses[].{ name, risky }
+//       data.outdated_packages[].{ name, current, latest, major_bump }
+//       data.top_vulnerabilities[].{ package/name, version, severity,
+//                                    summary/title/id, fixed_in, cvss_score }
+//       data.quick_actions[].{ label/type, description/target, severity }
+// ─────────────────────────────────────────────────────────────────────────────
+
 function renderSbomSection(
   result: unknown,
   findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
 ): string {
-  const data = asRecord(result);
+  const data    = asRecord(result);
   const summary = asRecord(data.summary);
-  const fallbackPackages = Array.isArray(data.components) ? data.components.length : Array.isArray(data.packages) ? data.packages.length : 0;
-  const vulnerabilityData = asRecord(data.vulnerability_scan);
-  const fallbackVulnerabilities = Array.isArray(vulnerabilityData.vulnerabilities)
-    ? vulnerabilityData.vulnerabilities.length
-    : findings.length;
-  const packages = stringValue(summary.total_components) || String(fallbackPackages);
-  const vulnerabilities = stringValue(summary.vulnerability_count) || String(fallbackVulnerabilities);
-  const vulnerableComponents = stringValue(summary.vulnerable_component_count);
-  const licenseReviews = stringValue(summary.license_review_count);
-  const disallowed = stringValue(summary.disallowed_count);
-  const confidence = stringValue(summary.confidence);
-  const riskSignal = stringValue(data.risk_signal) || stringValue(summary.risk_signal);
-  const riskLabel = riskSignal ? riskSignal.toUpperCase() : "";
 
-  const topVulnerabilities = Array.isArray(data.top_vulnerabilities) ? data.top_vulnerabilities : [];
-  const topVulnerabilityRows = topVulnerabilities
+  // ── 1. Snapshot counts ────────────────────────────────────────────────────
+  const fallbackComponents =
+    Array.isArray(data.components) ? data.components.length :
+    Array.isArray(data.packages)   ? data.packages.length : 0;
+
+  const totalComponents = escapeHtml(stringValue(summary.total_components) || String(fallbackComponents) || "—");
+  const directDeps      = escapeHtml(stringValue(summary.direct_deps)      || "—");
+  const transitiveDeps  = escapeHtml(stringValue(summary.transitive_deps)  || "—");
+
+  const vulnScan    = asRecord(data.vulnerability_scan);
+  const fallbackVulnCount = Array.isArray(vulnScan.vulnerabilities)
+    ? vulnScan.vulnerabilities.length
+    : findings.length;
+  const totalVulns  = Number(stringValue(summary.vulnerability_count) || fallbackVulnCount) || 0;
+  const vulnColor   = totalVulns > 0 ? "#ff6b8a" : "#66f0b3";
+
+  // ── 2. Risk signal ────────────────────────────────────────────────────────
+  const riskRaw    = (stringValue(data.risk_signal) || stringValue(summary.risk_signal) || "").toUpperCase();
+  const confidence = escapeHtml(stringValue(summary.confidence));
+  const deployable = riskRaw !== "CRITICAL" && riskRaw !== "HIGH";
+
+  const riskClass =
+    riskRaw === "CRITICAL" || riskRaw === "HIGH" ? "high" :
+    riskRaw === "MEDIUM" ? "medium" :
+    riskRaw === "LOW"    ? "low"    : "neutral";
+
+  const riskCard = riskRaw ? `
+    <div class="v2-decision ${riskClass}" style="margin-bottom:16px">
+      <div class="v2-decision-label">SUPPLY CHAIN RISK</div>
+      <div class="v2-decision-text">
+        ${deployable ? "✅" : "🚫"} ${escapeHtml(riskRaw)}
+        ${confidence
+          ? `<span style="font-size:13px;font-weight:400;color:#9fb0c0"> · Confidence: ${confidence}</span>`
+          : ""}
+      </div>
+    </div>` : "";
+
+  // ── 3. Snapshot 2×2 grid ──────────────────────────────────────────────────
+  const snapshotGrid = `
+    <div class="v2-hero" style="margin-bottom:16px">
+      <div class="v2-metric">
+        <div class="v2-metric-label">COMPONENTS</div>
+        <div class="v2-metric-value">${totalComponents}</div>
+      </div>
+      <div class="v2-metric">
+        <div class="v2-metric-label">DIRECT DEPS</div>
+        <div class="v2-metric-value">${directDeps}</div>
+      </div>
+    </div>
+    <div class="v2-hero" style="margin-bottom:16px">
+      <div class="v2-metric">
+        <div class="v2-metric-label">TRANSITIVE DEPS</div>
+        <div class="v2-metric-value">${transitiveDeps}</div>
+      </div>
+      <div class="v2-metric">
+        <div class="v2-metric-label">VULNERABILITIES</div>
+        <div class="v2-metric-value" style="color:${vulnColor}">${totalVulns}</div>
+      </div>
+    </div>`;
+
+  // ── 4. Vulnerability breakdown bars ───────────────────────────────────────
+  const bkd        = asRecord(data.vulnerability_breakdown);
+  const bCrit      = Number(bkd.critical ?? 0);
+  const bHigh      = Number(bkd.high     ?? 0);
+  const bMed       = Number(bkd.medium   ?? 0);
+  const bLow       = Number(bkd.low      ?? 0);
+  const bTotal     = bCrit + bHigh + bMed + bLow;
+
+  function vulnBar(label: string, count: number, color: string): string {
+    const pct = bTotal > 0 ? Math.round((count / bTotal) * 100) : 0;
+    return `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <span style="width:72px;font-size:10px;font-weight:800;letter-spacing:1px;color:${color}">${label}</span>
+        <div style="flex:1;height:5px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${color};border-radius:3px"></div>
+        </div>
+        <span style="width:26px;text-align:right;font-size:13px;font-weight:800;color:#e6edf3">${count}</span>
+      </div>`;
+  }
+
+  const breakdownSection = bTotal > 0 ? `
+    <div class="v2-section" style="margin-bottom:16px">
+      <div class="v2-section-title">VULNERABILITY BREAKDOWN</div>
+      ${vulnBar("CRITICAL", bCrit, "#ff6b8a")}
+      ${vulnBar("HIGH",     bHigh, "#ffb25c")}
+      ${vulnBar("MEDIUM",   bMed,  "#ffd36a")}
+      ${vulnBar("LOW",      bLow,  "#76d9ff")}
+      <div style="margin-top:10px;font-size:11px;color:#606880">
+        Total known CVEs: <strong style="color:#e6edf3">${bTotal}</strong>
+      </div>
+    </div>` : "";
+
+  // ── 5. License compliance ─────────────────────────────────────────────────
+  const rawLicenses      = Array.isArray(data.licenses) ? data.licenses : [];
+  const licenseReviewCnt = stringValue(summary.license_review_count);
+  const disallowedCnt    = stringValue(summary.disallowed_count);
+
+  const licPills = rawLicenses
+    .map((item) => {
+      const row  = asRecord(item);
+      const name = escapeHtml(stringValue(row.name));
+      if (!name) { return ""; }
+      const risky = Boolean(row.risky) || /^(gpl|agpl)/i.test(stringValue(row.name));
+      const style = risky
+        ? 'style="color:#f97316;border-color:rgba(249,115,22,0.35);background:rgba(249,115,22,0.08)"'
+        : "";
+      return `<span class="pill" ${style}>${name}</span>`;
+    })
+    .filter(Boolean)
+    .join("");
+
+  const licenseSection = (licPills || licenseReviewCnt || disallowedCnt) ? `
+    <div class="v2-section" style="margin-bottom:16px">
+      <div class="v2-section-title">LICENSE COMPLIANCE</div>
+      ${licPills ? `<div class="pill-row" style="margin-bottom:10px">${licPills}</div>` : ""}
+      ${disallowedCnt && disallowedCnt !== "0"
+        ? `<p style="margin:0;font-size:12px;color:#f97316">⚠ ${escapeHtml(disallowedCnt)} disallowed license(s) — review before shipping.</p>`
+        : licenseReviewCnt && licenseReviewCnt !== "0"
+          ? `<p style="margin:0;font-size:12px;color:#9fb0c0">${escapeHtml(licenseReviewCnt)} license(s) flagged for review.</p>`
+          : `<p style="margin:0;font-size:12px;color:#66f0b3">✅ No license conflicts detected.</p>`}
+    </div>` : "";
+
+  // ── 6. Outdated packages ──────────────────────────────────────────────────
+  const rawOutdated = Array.isArray(data.outdated_packages) ? data.outdated_packages : [];
+  const outdatedRows = rawOutdated
+    .slice(0, 6)
+    .map((item) => {
+      const row     = asRecord(item);
+      const name    = escapeHtml(stringValue(row.name));
+      const current = escapeHtml(stringValue(row.current));
+      const latest  = escapeHtml(stringValue(row.latest));
+      const major   = Boolean(row.major_bump);
+      if (!name) { return ""; }
+      return `
+        <div class="v2-list-item">
+          <span class="v2-list-index" style="font-size:9px;background:rgba(255,255,255,0.04);color:#555e6e">•</span>
+          <span class="v2-list-text">
+            ${name}
+            ${current ? `<span style="color:#606880"> ${current}</span>` : ""}
+            ${latest  ? `<span style="color:#66f0b3"> → ${latest}</span>` : ""}
+            ${major   ? `<span style="font-size:9px;font-weight:800;color:#f97316;background:rgba(249,115,22,0.1);border:1px solid rgba(249,115,22,0.3);border-radius:4px;padding:1px 5px;margin-left:6px">MAJOR</span>` : ""}
+          </span>
+        </div>`;
+    })
+    .filter(Boolean)
+    .join("");
+
+  const moreOutdated = rawOutdated.length > 6 ? rawOutdated.length - 6 : 0;
+
+  const outdatedSection = outdatedRows ? `
+    <div class="v2-section" style="margin-bottom:16px">
+      <div class="v2-section-title">OUTDATED PACKAGES${rawOutdated.length > 0 ? ` — ${rawOutdated.length}` : ""}</div>
+      <div class="v2-list">${outdatedRows}</div>
+      ${moreOutdated > 0
+        ? `<p class="v2-findings-note" style="margin-top:10px">… and ${moreOutdated} more. Open the full report.</p>`
+        : ""}
+    </div>` : "";
+
+  // ── 7. Top vulnerabilities ────────────────────────────────────────────────
+  const topVulns = (Array.isArray(data.top_vulnerabilities) ? data.top_vulnerabilities : [])
     .map((item) => {
       const row = asRecord(item);
-      const pkg = stringValue(row.package) || stringValue(row.name) || "Unknown package";
-      const version = stringValue(row.version);
-      const severity = stringValue(row.severity) || "UNKNOWN";
-      const title = stringValue(row.summary) || stringValue(row.title) || stringValue(row.id) || "Vulnerability";
-      const fixedIn = stringValue(row.fixed_in);
-      return { pkg, version, severity, title, fixedIn };
+      return {
+        pkg:      stringValue(row.package)    || stringValue(row.name) || "Unknown",
+        version:  stringValue(row.version),
+        severity: (stringValue(row.severity)  || "UNKNOWN").toUpperCase(),
+        title:    stringValue(row.summary)    || stringValue(row.title) || stringValue(row.id) || "Vulnerability",
+        fixedIn:  stringValue(row.fixed_in),
+        cveId:    stringValue(row.id)         || stringValue(row.cve_id),
+        cvss:     stringValue(row.cvss_score) || stringValue(row.cvss),
+      };
     })
-    .filter((item) => item.pkg || item.title)
-    .slice(0, 5);
+    .filter((v) => v.pkg || v.title);
 
+  const vulnCards = topVulns
+    .map((v, i) => {
+      const sevClass = `v2-severity-${v.severity.toLowerCase()}`;
+      const isExtra  = i >= 3 ? " is-extra" : "";
+      const fixCmd   = v.fixedIn ? `upgrade ${v.pkg} to ${v.fixedIn}` : "";
+      return `
+        <div class="v2-finding-card v2-collapsible-item${isExtra}">
+          <div class="v2-finding-severity ${sevClass}">${escapeHtml(v.severity)}</div>
+          ${v.cveId ? `<div style="font-size:11px;font-weight:700;color:#a78bfa;margin-bottom:4px">${escapeHtml(v.cveId)}</div>` : ""}
+          <div class="v2-finding-title">
+            ${escapeHtml(v.pkg)}${v.version ? `<span style="color:#606880">@${escapeHtml(v.version)}</span>` : ""}
+          </div>
+          <div class="v2-finding-desc">${escapeHtml(v.title)}</div>
+          ${v.fixedIn
+            ? `<div style="margin-top:8px;font-size:11px;color:#66f0b3">
+                 ✅ Fix available:
+                 <code style="background:rgba(102,240,179,0.1);border:1px solid rgba(102,240,179,0.22);padding:1px 6px;border-radius:4px">${escapeHtml(v.fixedIn)}</code>
+               </div>`
+            : `<div style="margin-top:6px;font-size:11px;color:#606880">⚠ No fix available yet</div>`}
+          ${v.cvss
+            ? `<div style="display:inline-block;margin-top:8px;font-size:10px;font-weight:800;letter-spacing:1px;color:#a78bfa;background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.22);border-radius:4px;padding:2px 8px">CVSS ${escapeHtml(v.cvss)}</div>`
+            : ""}
+          ${fixCmd
+            ? `<div style="margin-top:10px">
+                 <button class="v2-copy-btn" data-copy-text="${escapeHtml(fixCmd)}">Copy Fix</button>
+               </div>`
+            : ""}
+        </div>`;
+    })
+    .join("");
+
+  const vulnsSection = topVulns.length ? `
+    <div class="v2-section" style="margin-bottom:16px">
+      <div class="v2-section-header">
+        <div class="v2-section-title">TOP VULNERABILITIES</div>
+        ${topVulns.length > 3 ? `
+          <div class="v2-section-actions">
+            <button class="v2-collapse-btn" data-toggle-collapse="sbom-vulns" aria-expanded="false">
+              Show All
+            </button>
+          </div>` : ""}
+      </div>
+      <p class="v2-findings-note">
+        Showing ${Math.min(3, topVulns.length)} of ${topVulns.length} findings.
+        Open the full report for the complete breakdown.
+      </p>
+      <div class="v2-findings v2-collapsible" data-collapsed="true" data-collapse-id="sbom-vulns">
+        ${vulnCards}
+      </div>
+    </div>` : "";
+
+  // ── 8. Quick actions ──────────────────────────────────────────────────────
   const quickActions = (Array.isArray(data.quick_actions) ? data.quick_actions : [])
     .map((item) => {
       if (!item || typeof item !== "object") {
@@ -1868,68 +2130,133 @@ function renderSbomSection(
       }
       const row = asRecord(item);
       return {
-        label: stringValue(row.label) || stringValue(row.type),
+        label:       stringValue(row.label)       || stringValue(row.type),
         description: stringValue(row.description) || stringValue(row.target),
-        severity: stringValue(row.severity),
+        severity:    stringValue(row.severity),
       };
     })
-    .filter((item) => item.label)
+    .filter((a) => a.label)
     .slice(0, 5);
 
-  const riskSection = riskLabel
-    ? `
-    <div class="section">
-      <h2 class="section-title">Risk Signal</h2>
-      <div class="stack">
-        <div class="stack-card"><strong>Overall Risk</strong><span style="color:${severityColor(riskSignal)}">${escapeHtml(riskLabel)}</span></div>
-        ${confidence ? `<div class="stack-card"><strong>Confidence</strong><span>${escapeHtml(confidence)}</span></div>` : ""}
-        ${licenseReviews ? `<div class="stack-card"><strong>License Review</strong><span>${escapeHtml(licenseReviews)}</span></div>` : ""}
-        ${disallowed ? `<div class="stack-card"><strong>Disallowed</strong><span>${escapeHtml(disallowed)}</span></div>` : ""}
+  const actionsSection = quickActions.length ? `
+    <div class="v2-section" style="margin-bottom:16px">
+      <div class="v2-section-title">QUICK ACTIONS</div>
+      <div class="v2-list">
+        ${quickActions.map((a, i) => `
+          <div class="v2-list-item">
+            <span class="v2-list-index">${i + 1}</span>
+            <span class="v2-list-text">
+              ${escapeHtml(a.label)}
+              ${a.severity
+                ? `<span style="font-size:11px;color:${severityColor(a.severity)};margin-left:4px">(${escapeHtml(a.severity.toUpperCase())})</span>`
+                : ""}
+              ${a.description
+                ? `<div style="color:#606880;font-size:12px;margin-top:3px">${escapeHtml(a.description)}</div>`
+                : ""}
+            </span>
+            ${a.description
+              ? `<button class="v2-copy-btn" data-copy-text="${escapeHtml(a.description)}">Copy</button>`
+              : ""}
+          </div>`).join("")}
       </div>
-    </div>`
-    : "";
+    </div>` : "";
 
-  const topVulnerabilitiesSection = topVulnerabilityRows.length
-    ? `
-    <div class="section">
-      <h2 class="section-title">Top Vulnerabilities</h2>
-      <div class="stack">
-        ${topVulnerabilityRows.map((item) => {
-          const title = `${item.pkg}${item.version ? `@${item.version}` : ""}`;
-          const fix = item.fixedIn ? ` Fixed in ${item.fixedIn}.` : "";
-          return `<div class="stack-card"><strong>${escapeHtml(item.severity.toUpperCase())} - ${escapeHtml(title)}</strong><span>${escapeHtml(item.title + fix)}</span></div>`;
-        }).join("")}
+  // ── 9. Component Inventory ────────────────────────────────────────────────
+  const rawComponents = Array.isArray(data.components) ? data.components : [];
+  const COMP_VISIBLE = 8;
+  const compRows = rawComponents.map((item: unknown, i: number) => {
+    const row = asRecord(item);
+    const name = escapeHtml(stringValue(row.name) || "—");
+    const version = escapeHtml(stringValue(row.version) || "—");
+    const type = escapeHtml(stringValue(row.type) || "library");
+    const license = stringValue(row.license);
+    const licenseDisplay = license && license.toUpperCase() !== "UNKNOWN"
+      ? escapeHtml(license)
+      : `<span style="color:#606880">—</span>`;
+    const isVulnerable = Boolean(row.vulnerable);
+    const isDisallowed = Boolean(row.disallowed);
+    const riskBadge = isDisallowed
+      ? `<span style="font-size:9px;font-weight:800;color:#ff6b8a;background:rgba(255,107,138,0.12);border:1px solid rgba(255,107,138,0.3);border-radius:4px;padding:1px 5px">BLOCKED</span>`
+      : isVulnerable
+        ? `<span style="font-size:9px;font-weight:800;color:#ffb25c;background:rgba(255,178,92,0.12);border:1px solid rgba(255,178,92,0.3);border-radius:4px;padding:1px 5px">VULN</span>`
+        : "";
+    const isExtra = i >= COMP_VISIBLE ? " is-extra" : "";
+    return `
+      <tr class="v2-collapsible-item${isExtra}">
+        <td style="color:#e6edf3;font-weight:600">${name}</td>
+        <td><code style="font-size:11px;color:#a78bfa">${version}</code></td>
+        <td style="color:#606880;font-size:11px">${type}</td>
+        <td style="font-size:11px">${licenseDisplay}</td>
+        <td>${riskBadge}</td>
+      </tr>`;
+  }).join("");
+
+  const componentSection = rawComponents.length > 0 ? `
+    <div class="v2-section" style="margin-bottom:16px">
+      <div class="v2-section-header">
+        <div class="v2-section-title">COMPONENT INVENTORY — ${rawComponents.length}</div>
+        ${rawComponents.length > COMP_VISIBLE ? `
+          <div class="v2-section-actions">
+            <button class="v2-collapse-btn" data-toggle-collapse="sbom-components" aria-expanded="false">
+              Show All
+            </button>
+          </div>` : ""}
       </div>
-    </div>`
-    : "";
-
-  const quickActionsSection = quickActions.length
-    ? `
-    <div class="section">
-      <h2 class="section-title">Quick Actions</h2>
-      <div class="stack">
-        ${quickActions.map((item) => {
-          const severity = item.severity ? ` (${item.severity.toUpperCase()})` : "";
-          return `<div class="stack-card"><strong>${escapeHtml(item.label + severity)}</strong><span>${escapeHtml(item.description)}</span></div>`;
-        }).join("")}
+      <div class="v2-collapsible" data-collapsed="true" data-collapse-id="sbom-components">
+        <table style="width:100%;border-collapse:collapse;margin-top:8px">
+          <thead>
+            <tr>
+              <th style="text-align:left;color:#606880;font-size:10px;font-weight:800;letter-spacing:1px;padding:6px 10px;border-bottom:1px solid #1e1e2e">NAME</th>
+              <th style="text-align:left;color:#606880;font-size:10px;font-weight:800;letter-spacing:1px;padding:6px 10px;border-bottom:1px solid #1e1e2e">VERSION</th>
+              <th style="text-align:left;color:#606880;font-size:10px;font-weight:800;letter-spacing:1px;padding:6px 10px;border-bottom:1px solid #1e1e2e">TYPE</th>
+              <th style="text-align:left;color:#606880;font-size:10px;font-weight:800;letter-spacing:1px;padding:6px 10px;border-bottom:1px solid #1e1e2e">LICENSE</th>
+              <th style="text-align:left;color:#606880;font-size:10px;font-weight:800;letter-spacing:1px;padding:6px 10px;border-bottom:1px solid #1e1e2e"></th>
+            </tr>
+          </thead>
+          <tbody>${compRows}</tbody>
+        </table>
       </div>
-    </div>`
-    : "";
+    </div>` : "";
 
+  // ── 10. Fallback findings table ──────────────────────────────────────────
+  const fallbackFindings = renderFindingsSection(findings);
+
+  // ── 11. Export actions ───────────────────────────────────────────────────
+  const exportSection = `
+    <div class="v2-section" style="margin-bottom:16px">
+      <div class="v2-section-title">EXPORT</div>
+      <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap">
+        <button class="shieldops-btn shieldops-btn-primary"
+                data-export-sbom-json
+                data-disable-on-loading
+                style="flex:1;min-width:180px">
+          📦 Export SBOM JSON
+        </button>
+        <button class="shieldops-btn"
+                data-print-report
+                style="flex:1;min-width:180px;background:#1e1e2e;color:#d8def0;border:1px solid #2a2a3e">
+          🖨️ Print / Save PDF
+        </button>
+      </div>
+      <p style="margin:10px 0 0;font-size:11px;color:#606880">
+        CycloneDX 1.5 format · Compatible with Dependency-Track, Grype, OWASP tools
+      </p>
+    </div>`;
+
+  // ── Assemble ──────────────────────────────────────────────────────────────
   return `
-    <div class="section">
-      <h2 class="section-title">SBOM Snapshot</h2>
-      <div class="stack">
-        <div class="stack-card"><strong>Components</strong><span>${escapeHtml(String(packages))}</span></div>
-        <div class="stack-card"><strong>Vulnerabilities</strong><span>${escapeHtml(String(vulnerabilities))}</span></div>
-        ${vulnerableComponents ? `<div class="stack-card"><strong>Vulnerable Components</strong><span>${escapeHtml(vulnerableComponents)}</span></div>` : ""}
-      </div>
-    </div>
-    ${riskSection}
-    ${topVulnerabilitiesSection}
-    ${quickActionsSection}
-    ${renderFindingsSection(findings)}
-  `;
+    <div class="shieldops-v2">
+      ${riskCard}
+      ${snapshotGrid}
+      ${breakdownSection}
+      ${componentSection}
+      ${licenseSection}
+      ${outdatedSection}
+      ${vulnsSection}
+      ${actionsSection}
+      ${fallbackFindings}
+      ${exportSection}
+    </div>`;
 }
 
 function renderComposeSection(
@@ -2317,6 +2644,53 @@ function getSidebarHtml(): string {
       </script>
     </body>
   </html>`;
+}
+
+function buildCycloneDxJson(result: unknown): string {
+  const data = asRecord(result);
+  const rawComponents = Array.isArray(data.components) ? data.components : [];
+  const metadata = asRecord(data.metadata);
+
+  const cdxComponents = rawComponents.map((item: unknown) => {
+    const comp = asRecord(item);
+    const rawType = stringValue(comp.type);
+    const entry: Record<string, unknown> = {
+      type: rawType === "container-image" ? "container" : "library",
+      name: stringValue(comp.name) || "unknown",
+    };
+    const version = stringValue(comp.version);
+    if (version) { entry.version = version; }
+    const purl = stringValue(comp.purl);
+    if (purl) { entry.purl = purl; }
+    const license = stringValue(comp.license);
+    if (license && license.toUpperCase() !== "UNKNOWN") {
+      entry.licenses = [{ license: { id: license } }];
+    }
+    return entry;
+  });
+
+  const document = {
+    bomFormat: "CycloneDX",
+    specVersion: "1.5",
+    serialNumber: stringValue(data.serial_number) || `urn:uuid:${Date.now().toString(36)}`,
+    version: 1,
+    metadata: {
+      timestamp: stringValue(metadata.timestamp) || new Date().toISOString(),
+      tools: [{
+        vendor: "ShieldOps AI",
+        name: "SBOM Service",
+        version: "1.0",
+      }],
+      component: {
+        type: "application",
+        name: stringValue(metadata.source_file) || "shieldops-ai-input",
+        version: "1.0",
+      },
+    },
+    components: cdxComponents,
+  };
+
+  return JSON.stringify(document, null, 2);
 }
 
 export function deactivate() {}
