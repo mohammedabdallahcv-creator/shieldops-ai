@@ -1033,11 +1033,12 @@ async function showResultPanel(
     }
     if (command === "printReport" && task === "sbom" && payload.result) {
       const html = buildSbomPrintHtml(payload.result, fileName);
-      const tmpDir = context.globalStorageUri;
-      await vscode.workspace.fs.createDirectory(tmpDir);
-      const tmpFile = vscode.Uri.joinPath(tmpDir, "sbom-report.html");
-      await vscode.workspace.fs.writeFile(tmpFile, Buffer.from(html, "utf-8"));
-      await vscode.env.openExternal(tmpFile);
+      const os = await import("os");
+      const path = await import("path");
+      const fs = await import("fs");
+      const tmpFile = path.join(os.tmpdir(), "shieldops-sbom-report.html");
+      fs.writeFileSync(tmpFile, html, "utf-8");
+      await vscode.env.openExternal(vscode.Uri.file(tmpFile));
       return;
     }
   });
