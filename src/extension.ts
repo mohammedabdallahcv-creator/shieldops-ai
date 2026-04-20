@@ -1832,11 +1832,89 @@ function renderSbomSection(
   findings: Array<{ severity?: string; line?: string | number; message?: string; description?: string }>,
 ): string {
   const data = asRecord(result);
-  const packages = Array.isArray(data.components) ? data.components.length : Array.isArray(data.packages) ? data.packages.length : 0;
+  const summary = asRecord(data.summary);
+  const fallbackPackages = Array.isArray(data.components) ? data.components.length : Array.isArray(data.packages) ? data.packages.length : 0;
   const vulnerabilityData = asRecord(data.vulnerability_scan);
-  const vulnerabilities = Array.isArray(vulnerabilityData.vulnerabilities)
+  const fallbackVulnerabilities = Array.isArray(vulnerabilityData.vulnerabilities)
     ? vulnerabilityData.vulnerabilities.length
     : findings.length;
+  const packages = stringValue(summary.total_components) || String(fallbackPackages);
+  const vulnerabilities = stringValue(summary.vulnerability_count) || String(fallbackVulnerabilities);
+  const vulnerableComponents = stringValue(summary.vulnerable_component_count);
+  const licenseReviews = stringValue(summary.license_review_count);
+  const disallowed = stringValue(summary.disallowed_count);
+  const confidence = stringValue(summary.confidence);
+  const riskSignal = stringValue(data.risk_signal) || stringValue(summary.risk_signal);
+  const riskLabel = riskSignal ? riskSignal.toUpperCase() : "";
+
+  const topVulnerabilities = Array.isArray(data.top_vulnerabilities) ? data.top_vulnerabilities : [];
+  const topVulnerabilityRows = topVulnerabilities
+    .map((item) => {
+      const row = asRecord(item);
+      const pkg = stringValue(row.package) || stringValue(row.name) || "Unknown package";
+      const version = stringValue(row.version);
+      const severity = stringValue(row.severity) || "UNKNOWN";
+      const title = stringValue(row.summary) || stringValue(row.title) || stringValue(row.id) || "Vulnerability";
+      const fixedIn = stringValue(row.fixed_in);
+      return { pkg, version, severity, title, fixedIn };
+    })
+    .filter((item) => item.pkg || item.title)
+    .slice(0, 5);
+
+  const quickActions = (Array.isArray(data.quick_actions) ? data.quick_actions : [])
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return { label: stringValue(item), description: "", severity: "" };
+      }
+      const row = asRecord(item);
+      return {
+        label: stringValue(row.label) || stringValue(row.type),
+        description: stringValue(row.description) || stringValue(row.target),
+        severity: stringValue(row.severity),
+      };
+    })
+    .filter((item) => item.label)
+    .slice(0, 5);
+
+  const riskSection = riskLabel
+    ? `
+    <div class="section">
+      <h2 class="section-title">Risk Signal</h2>
+      <div class="stack">
+        <div class="stack-card"><strong>Overall Risk</strong><span style="color:${severityColor(riskSignal)}">${escapeHtml(riskLabel)}</span></div>
+        ${confidence ? `<div class="stack-card"><strong>Confidence</strong><span>${escapeHtml(confidence)}</span></div>` : ""}
+        ${licenseReviews ? `<div class="stack-card"><strong>License Review</strong><span>${escapeHtml(licenseReviews)}</span></div>` : ""}
+        ${disallowed ? `<div class="stack-card"><strong>Disallowed</strong><span>${escapeHtml(disallowed)}</span></div>` : ""}
+      </div>
+    </div>`
+    : "";
+
+  const topVulnerabilitiesSection = topVulnerabilityRows.length
+    ? `
+    <div class="section">
+      <h2 class="section-title">Top Vulnerabilities</h2>
+      <div class="stack">
+        ${topVulnerabilityRows.map((item) => {
+          const title = `${item.pkg}${item.version ? `@${item.version}` : ""}`;
+          const fix = item.fixedIn ? ` Fixed in ${item.fixedIn}.` : "";
+          return `<div class="stack-card"><strong>${escapeHtml(item.severity.toUpperCase())} - ${escapeHtml(title)}</strong><span>${escapeHtml(item.title + fix)}</span></div>`;
+        }).join("")}
+      </div>
+    </div>`
+    : "";
+
+  const quickActionsSection = quickActions.length
+    ? `
+    <div class="section">
+      <h2 class="section-title">Quick Actions</h2>
+      <div class="stack">
+        ${quickActions.map((item) => {
+          const severity = item.severity ? ` (${item.severity.toUpperCase()})` : "";
+          return `<div class="stack-card"><strong>${escapeHtml(item.label + severity)}</strong><span>${escapeHtml(item.description)}</span></div>`;
+        }).join("")}
+      </div>
+    </div>`
+    : "";
 
   return `
     <div class="section">
@@ -1844,8 +1922,12 @@ function renderSbomSection(
       <div class="stack">
         <div class="stack-card"><strong>Components</strong><span>${escapeHtml(String(packages))}</span></div>
         <div class="stack-card"><strong>Vulnerabilities</strong><span>${escapeHtml(String(vulnerabilities))}</span></div>
+        ${vulnerableComponents ? `<div class="stack-card"><strong>Vulnerable Components</strong><span>${escapeHtml(vulnerableComponents)}</span></div>` : ""}
       </div>
     </div>
+    ${riskSection}
+    ${topVulnerabilitiesSection}
+    ${quickActionsSection}
     ${renderFindingsSection(findings)}
   `;
 }
